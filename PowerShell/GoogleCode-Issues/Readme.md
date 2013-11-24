@@ -16,13 +16,20 @@ manager tool. But importing (and maintaining) issues from GoogleCode is hard...
 How to use this script in ConEmu?
 
 Create new Task in ConEmu settings with
-  Command
-    powershell -NoProfile -NoExit -Command "Import-Module {FullPath}\List.ps1 -ArgumentList list"
-  Task parameters
-    /dir {FullPath}
-Replace {FullPath} with your path, for example C:\Source\ConEmu
+
+    Command
+      powershell -NoProfile -NoExit -Command "Import-Module {FullPath}\List.ps1 -ArgumentList 'Tasks'"
+    Task parameters
+      /dir {FullPath}
+
+Replace **{FullPath}** with your path, for example **C:\Source\ConEmu**
 Script will show not fixed tasks with priority larger or equal to 8
-In the powershell prompt you can use commands "Fix" and "UnFix"
+
+In the powershell prompt you can use commands **Fix** and **UnFix**. Both takes one argument - numeric **ID** from your ToDoList xml file (this is first column of **Tasks**). Also, you may call them with google issue no, just pass it with **-eid** prefix.
+
+    Fix 1234
+    UnFix -eid 555
 
 Also, you may run script nightly to retrieve new Issues from GoogleCode and update your ToDo xml file
-  powershell -NoProfile -Command "Import-Module {FullPath}\List.ps1 -ArgumentList update"
+
+    powershell -NoProfile -Command "Import-Module {FullPath}\List.ps1 -ArgumentList update"

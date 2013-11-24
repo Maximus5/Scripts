@@ -1,9 +1,9 @@
-param([String]$workmode="list",[String]$aliases="yes",[int]$listpriority=8)
+param([String]$workmode="tasks",[String]$aliases="yes",[int]$listpriority=8)
 
 # How to use this script in ConEmu?
 # Create new Task in ConEmu settings with
 #   Command
-#     powershell -NoProfile -NoExit -Command "Import-Module {FullPath}\List.ps1 -ArgumentList list"
+#     powershell -NoProfile -NoExit -Command "Import-Module {FullPath}\List.ps1 -ArgumentList 'Tasks'"
 #   Task parameters
 #     /dir {FullPath}
 # Replace {FullPath} with your path, for example C:\Source\ConEmu
@@ -245,7 +245,7 @@ function ToDoList-FormatTaskInfo($t)
   return $s
 }
 
-function ToDoList-GetTasks([xml]$x=$null)
+function ToDoList-GetTasks([xml]$x=$null,[int]$priority=8)
 {
   Write-Host -ForegroundColor Green "Please wait, loading, filtering, sorting..."
   if ($x -eq $null) {
@@ -253,7 +253,7 @@ function ToDoList-GetTasks([xml]$x=$null)
   }
   #$x.SelectNodes("TODOLIST//TASK") | where { [int]$_.Priority -ge 8} | where { [int]$_.PERCENTDONE -le 99} | sort {[int]$_.Priority} | ft "ID","EXTERNALID","PRIORITY",{Stars -t $_},"ALLOCATEDBY","TITLE" -AutoSize -HideTableHeader
   #$x.SelectNodes("TODOLIST//TASK") | where { [int]$_.Priority -ge 8} | where { [int]$_.PERCENTDONE -le 99} | sort {[int]$_.Priority},{[double]$_.CreationDate} | ft "ID","EXTERNALID","PRIORITY",{Stars -t $_},"ALLOCATEDBY","TITLE" -AutoSize -HideTableHeader
-  $x.SelectNodes("TODOLIST//TASK") | where { [int]$_.Priority -ge $listpriority} | where { [int]$_.PERCENTDONE -le 99} | sort {[int]$_.Priority},{[int](ToDoList-GetStars -t $_)},{[double]$_.CreationDate} | ft {ToDoList-FormatTaskInfo $_},"TITLE" -AutoSize -HideTableHeader
+  $x.SelectNodes("TODOLIST//TASK") | where { [int]$_.Priority -ge $priority} | where { [int]$_.PERCENTDONE -le 99} | sort {[int]$_.Priority},{[int](ToDoList-GetStars -t $_)},{[double]$_.CreationDate} | ft {ToDoList-FormatTaskInfo $_},"TITLE" -AutoSize -HideTableHeader
 }
 
 function ToDoList-TaskFix([int]$i,[xml]$x=$null,[int]$eid=0)
@@ -273,7 +273,7 @@ function ToDoList-TaskFix([int]$i,[xml]$x=$null,[int]$eid=0)
   }
 }
 
-function ToDoList-UnFix([int]$i,[xml]$x=$null,[int]$eid=0)
+function ToDoList-TaskUnFix([int]$i,[xml]$x=$null,[int]$eid=0)
 {
   try {
     if ($x -eq $null) {
@@ -761,11 +761,13 @@ if ($aliases -eq "yes") {
 #UnFix 1425
 #Task 1425
 
-if ($workmode -eq "list") {
-  ToDoList-GetTasks
+if ($workmode -eq "tasks") {
+  ToDoList-GetTasks -priority $listpriority
+
 } elseif ($workmode -eq "update") {
   # Load new Issues from GC and update Stars count in all tasks
   ToDoList-UpdateTasks
+
 } elseif ($workmode -eq "test") {
   #ToDoList-SetStars 1425 10
   #$cmt = ToDoList-GetCommentExt 1129
@@ -775,6 +777,5 @@ if ($workmode -eq "list") {
   #ToDoList-GetLastIssueNo
   #ToDoList-RetrieveIssueFiles 1365
   #ToDoList-GetCommentExt 1129
-} elseif ($workmode -eq "task") {
   #ToDoList-GetTask 1621
 }
