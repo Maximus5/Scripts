@@ -1,0 +1,28 @@
+## Purpose
+Recently, found nice and handy [ToDoList](http://portableapps.com/apps/office/todolist_portable)
+manager tool. But importing (and maintaining) issues from GoogleCode is hard...
+
+### This script allows
+
+  * Importing all issues from your GoogleCode project in your xml ToDoList
+  * Downloading your issues to HTML files on your drive
+  * Downloading issue attachments to your drive
+  * Updating issues "Stars" count in your xml ToDoList
+  * Displaying actual (not fixed) issues with priority larger or equal to 8
+  * Fixing and UnFixing issues (in your xml) from PowerShell prompt
+
+## Usage
+
+How to use this script in ConEmu?
+
+Create new Task in ConEmu settings with
+  Command
+    powershell -NoProfile -NoExit -Command "Import-Module {FullPath}\List.ps1 -ArgumentList list"
+  Task parameters
+    /dir {FullPath}
+Replace {FullPath} with your path, for example C:\Source\ConEmu
+Script will show not fixed tasks with priority larger or equal to 8
+In the powershell prompt you can use commands "Fix" and "UnFix"
+
+Also, you may run script nightly to retrieve new Issues from GoogleCode and update your ToDo xml file
+  powershell -NoProfile -Command "Import-Module {FullPath}\List.ps1 -ArgumentList update"
