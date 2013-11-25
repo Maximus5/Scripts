@@ -531,7 +531,13 @@ function ToDoList-UpdateTasks
     # Fixed or not?
     $sPercent = "0"
     $FixedWords | foreach { if ($csv.Status -eq $_) { $sPercent = "100" } }
-    $task.SetAttribute("PERCENTDONE",$sPercent)
+    if ($task.PERCENTDONE -ne $sPercent) {
+      $task.SetAttribute("PERCENTDONE",$sPercent)
+      $dt = (Get-Date $csv.Modified)
+      $task.SetAttribute("DONEDATE",$dt.ToOADate())
+      $task.SetAttribute("DONEDATESTRING",($dt.ToShortDateString()+" "+$dt.ToShortTimeString()))
+      $script:modified = $TRUE
+    }
 
     $tParent = $null
 
@@ -566,6 +572,10 @@ function ToDoList-UpdateTasks
     {
       $script:IssuePage = ""
 
+      if ($csv.ID -eq "1360") {
+        $i = 0
+      }
+
       #"ProcessRow called"
       $x_path = ("TODOLIST//TASK[@EXTERNALID='" + $csv.ID + "']")
       $tt = $x.SelectSingleNode($x_path)
@@ -586,7 +596,7 @@ function ToDoList-UpdateTasks
         $tNew.SetAttribute("CREATEDBY",$csv.Reporter)
         $tNew.SetAttribute("EXTERNALID",$csv.ID)
         $tNew.SetAttribute("RISK","0")
-        $tNew.SetAttribute("PERCENTDONE",$sPercent)
+        #$tNew.SetAttribute("PERCENTDONE",$sPercent) # it will be set in SelectParent function
         $tNew.SetAttribute("PRIORITY","5")
         #$tNew.SetAttribute("PRIORITYCOLOR","15732480")
         #$tNew.SetAttribute("PRIORITYWEBCOLOR","#000FF0")
@@ -620,10 +630,23 @@ function ToDoList-UpdateTasks
         #$tNew
 
       # or existing one? Update stars and "Fixed" state
-      } elseif (IsNumeric($csv.Stars)) {
-        #Write-Host ("Updating stars for "+$csv.ID+" to "+$csv.Stars+" : "+$tt.Title)
-        ToDoList-SetStars -new $csv.Stars -t $tt -x $x -DoSave $FALSE
-        #"Stars updated"
+      } else {
+        if (IsNumeric($csv.Stars)) {
+          #Write-Host ("Updating stars for "+$csv.ID+" to "+$csv.Stars+" : "+$tt.Title)
+          ToDoList-SetStars -new $csv.Stars -t $tt -x $x -DoSave $FALSE
+          #"Stars updated"
+        }
+
+        $sPercent = "0"
+        $FixedWords | foreach { if ($csv.Status -eq $_) { $sPercent = "100" } }
+        if ($tt.PERCENTDONE -ne $sPercent) {
+          $tt.SetAttribute("PERCENTDONE",$sPercent)
+          #DONEDATE="41604.05045139" DONEDATESTRING="26.11.2013 1:12"
+          $dt = (Get-Date $csv.Modified)
+          $tt.SetAttribute("DONEDATE",$dt.ToOADate())
+          $tt.SetAttribute("DONEDATESTRING",($dt.ToShortDateString()+" "+$dt.ToShortTimeString()))
+          $script:modified = $TRUE
+        }
       }
 
       # Asked to store Issues in html files?
