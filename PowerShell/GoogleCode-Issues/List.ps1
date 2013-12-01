@@ -1,4 +1,4 @@
-param([String]$workmode="tasks",[String]$aliases="yes",[int]$listpriority=8)
+param([String]$workmode="tasks",[String]$options="",[String]$aliases="yes",[int]$listpriority=8)
 
 # How to use this script in ConEmu?
 # Create new Task in ConEmu settings with
@@ -24,7 +24,8 @@ $googlecode_issue_href = ("http://code.google.com/p/" + $GoogleCodeProjectName +
 $http_prefix = ("http://code.google.com/p/" + $GoogleCodeProjectName + "/issues/detail?id=")
 $list_prefix = ("http://code.google.com/p/" + $GoogleCodeProjectName + "/issues/list?can=1&q=&colspec=ID%20Stars%20Type%20Status%20Modified%20Reporter%20Summary&sort=id%20-modified")
 $csv_prefix  = ("http://code.google.com/p/" + $GoogleCodeProjectName + "/issues/csv?can=1&q=&colspec=ID%20Stars%20Type%20Status%20Modified%20Reporter%20Summary&sort=id%20-modified")
-$last_csv_prefix  = ("http://code.google.com/p/" + $GoogleCodeProjectName + "/issues/csv?can=1&q=&colspec=ID%20Stars%20Type%20Status%20Modified%20Reporter%20Summary&sort=-id%20-modified&num=10&start=")
+$last_csv_prefix  = ("http://code.google.com/p/" + $GoogleCodeProjectName + "/issues/csv?can=1&q=&colspec=ID%20Stars%20Type%20Status%20Modified%20Reporter%20Summary&sort=-id%20-modified")
+$recent_csv_prefix  = ("http://code.google.com/p/" + $GoogleCodeProjectName + "/issues/csv?can=1&q=&colspec=ID%20Stars%20Type%20Status%20Modified%20Reporter%20Summary&sort=-modified%20-id")
 # This task will get new GC issues, just create a task
 # named "Imported" in your ToDo list before usage
 $xml_path_imported = "/TODOLIST//TASK[@TITLE='Imported']"
@@ -164,6 +165,7 @@ function ToDoList-GetStars([int]$i=0,[xml]$x=$null,[System.Xml.XmlElement]$t=$nu
 
 function ToDoList-SetStars([int]$i=0,[String]$new,[xml]$x=$null,[System.Xml.XmlElement]$t=$null,[Boolean]$DoSave=$TRUE,[int]$eid=0)
 {
+  $is_modified = $FALSE
   if ($t -eq $null) {
     if ($x -eq $null) {
       $x = ToDoList-LoadXml
@@ -180,19 +182,20 @@ function ToDoList-SetStars([int]$i=0,[String]$new,[xml]$x=$null,[System.Xml.XmlE
       $v = $s.SetAttribute("ID","CUST_STARS")
       $v = $s.SetAttribute("VALUE",$new)
       $v = $t.AppendChild($s)
+      $is_modified = $TRUE
       $script:modified = $TRUE
     } elseif ($s.GetAttribute("VALUE") -ne $new) {
       $v = $s.SetAttribute("VALUE",$new)
+      $is_modified = $TRUE
       $script:modified = $TRUE
     }
     if ($DoSave) {
       ToDoList-SaveXml $x
-    } else {
-      return
     }
   } catch {
     ToDoList-DumpException $error[0]
   }
+  return $is_modified
 }
 
 function ToDoList-SetTaskAttr([int]$id=0,[String]$attr="",[String]$new="",[xml]$x=$null,[System.Xml.XmlElement]$t=$null,[Boolean]$DoSave=$TRUE,[int]$eid=0)
@@ -217,6 +220,7 @@ function ToDoList-SetTaskAttr([int]$id=0,[String]$attr="",[String]$new="",[xml]$
     }
   }
 }
+
 
 function ToDoList-FormatTaskInfo($t)
 {
@@ -245,15 +249,34 @@ function ToDoList-FormatTaskInfo($t)
   return $s
 }
 
-function ToDoList-GetTasks([xml]$x=$null,[int]$priority=8)
+function ToDoList-TaskHasString([System.Xml.XmlElement]$t,[String]$find)
 {
-  Write-Host -ForegroundColor Green "Please wait, loading, filtering, sorting..."
+  if (($_.TITLE -ne $null) -And ($_.TITLE.IndexOf($find) -ge 0)) { return $TRUE }
+  if (($_.COMMENTS -ne $null) -And ($_.COMMENTS.IndexOf($find) -ge 0)) { return $TRUE }
+  if (($_.ALLOCATEDBY -ne $null) -And ($_.ALLOCATEDBY.IndexOf($find) -ge 0)) { return $TRUE }
+  return $FALSE
+}
+
+function ToDoList-GetTasks([int]$priority=8,[String]$sort="",[xml]$x=$null,[String]$find="")
+{
+  Write-Host -ForegroundColor Green -NoNewline "Please wait, loading..."
   if ($x -eq $null) {
     $x = ToDoList-LoadXml
   }
+  Write-Host -ForegroundColor Green " filtering, sorting..."
   #$x.SelectNodes("TODOLIST//TASK") | where { [int]$_.Priority -ge 8} | where { [int]$_.PERCENTDONE -le 99} | sort {[int]$_.Priority} | ft "ID","EXTERNALID","PRIORITY",{Stars -t $_},"ALLOCATEDBY","TITLE" -AutoSize -HideTableHeader
   #$x.SelectNodes("TODOLIST//TASK") | where { [int]$_.Priority -ge 8} | where { [int]$_.PERCENTDONE -le 99} | sort {[int]$_.Priority},{[double]$_.CreationDate} | ft "ID","EXTERNALID","PRIORITY",{Stars -t $_},"ALLOCATEDBY","TITLE" -AutoSize -HideTableHeader
-  $x.SelectNodes("TODOLIST//TASK") | where { [int]$_.Priority -ge $priority} | where { [int]$_.PERCENTDONE -le 99} | sort {[int]$_.Priority},{[int](ToDoList-GetStars -t $_)},{[double]$_.CreationDate} | ft {ToDoList-FormatTaskInfo $_},"TITLE" -AutoSize -HideTableHeader
+  if ($find -ne "") {
+    $x.SelectNodes("TODOLIST//TASK") `
+      | where { [int]$_.PERCENTDONE -le 99} | where {ToDoList-TaskHasString $_ $find} `
+      | sort {[int]$_.ID} | ft {ToDoList-FormatTaskInfo $_},"TITLE" -AutoSize -HideTableHeader
+  } elseif ($sort -eq "id") {
+    $x.SelectNodes("TODOLIST//TASK") | where { [int]$_.Priority -ge $priority} | where { [int]$_.PERCENTDONE -le 99} | sort {[int]$_.ID} | ft {ToDoList-FormatTaskInfo $_},"TITLE" -AutoSize -HideTableHeader
+  } elseif ($sort -eq "cd") {
+    $x.SelectNodes("TODOLIST//TASK") | where { [int]$_.Priority -ge $priority} | where { [int]$_.PERCENTDONE -le 99} | sort {[double](iif -c ($_.LASTMOD -ne $null) -a $_.LASTMOD -b $_.CreationDate)},{[int]$_.ID} | ft {ToDoList-FormatTaskInfo $_},"TITLE" -AutoSize -HideTableHeader
+  } else {
+    $x.SelectNodes("TODOLIST//TASK") | where { [int]$_.Priority -ge $priority} | where { [int]$_.PERCENTDONE -le 99} | sort {[int]$_.Priority},{[int](ToDoList-GetStars -t $_)},{[double]$_.CreationDate} | ft {ToDoList-FormatTaskInfo $_},"TITLE" -AutoSize -HideTableHeader
+  }
 }
 
 function ToDoList-TaskFix([int]$i,[xml]$x=$null,[int]$eid=0)
@@ -421,7 +444,7 @@ function ToDoList-GetCommentExt([int]$eid=0)
   return ToDoList-FormatXmlText $cmt
 }
 
-function ToDoList-GetComment([int]$i=0,[xml]$x=$null,[System.Xml.XmlElement]$t=$null,[int]$eid=0)
+function ToDoList-ShowComment([int]$i=0,[xml]$x=$null,[System.Xml.XmlElement]$t=$null,[int]$eid=0)
 {
   if ($t -eq $null) {
     if ($x -eq $null) {
@@ -440,9 +463,8 @@ function ToDoList-GetComment([int]$i=0,[xml]$x=$null,[System.Xml.XmlElement]$t=$
 
   if (($s -eq $null) -Or ($s -eq "")) {
     Write-Host -ForegroundColor Red "There is no comments yet"
-    return ""
   } else {
-    return $s."#text"
+    Write-Host -ForegroundColor Gray $s."#text".Replace('<a title="" href="/p/conemu-maximus5/wiki/ConEmu">ConEmu</a>','ConEmu')
   }
 }
 
@@ -503,8 +525,19 @@ function ToDoList-UpdateComment([int]$i=0,[xml]$x=$null,[System.Xml.XmlElement]$
   return $cmt
 }
 
-function ToDoList-UpdateTasks
+function ToDoList-PrintUpInfo([String]$id="",[String]$act="",[String]$txt="")
 {
+  if ($id.Length -lt 5) { $id = $id.PadRight(5) }
+  Write-Host -NoNewline -ForegroundColor Green ("Issue "+$id+" ")
+  Write-Host -NoNewline -ForegroundColor Yellow $act.PadRight(9)
+  Write-Host $txt
+}
+
+function ToDoList-UpdateTasks([String]$options="")
+{
+  $script:LastMode = $FALSE
+  if ((","+$options+",").IndexOf(",last,") -ge 0) { $script:LastMode = $TRUE }
+
   Write-Host -ForegroundColor Green "Please wait, updating your todo list..."
 
   # Load xml file (existing task list)
@@ -568,6 +601,8 @@ function ToDoList-UpdateTasks
   
   function ProcessRow($csv)
   {
+    $is_modified = $FALSE
+
     if (IsNumeric($csv.ID))
     {
       $script:IssuePage = ""
@@ -579,6 +614,12 @@ function ToDoList-UpdateTasks
       #"ProcessRow called"
       $x_path = ("TODOLIST//TASK[@EXTERNALID='" + $csv.ID + "']")
       $tt = $x.SelectSingleNode($x_path)
+
+      $dt = (Get-Date $csv.Modified)
+      $dtOA = [String]$dt.ToOADate() # ex "41604.05045139"
+      $dtST = ($dt.ToShortDateString()+" "+$dt.ToShortTimeString())
+
+      $force_html = $TRUE
 
       # This is new issue?
       if ($tt -eq $null) {
@@ -600,9 +641,10 @@ function ToDoList-UpdateTasks
         $tNew.SetAttribute("PRIORITY","5")
         #$tNew.SetAttribute("PRIORITYCOLOR","15732480")
         #$tNew.SetAttribute("PRIORITYWEBCOLOR","#000FF0")
-        $dt = (Get-Date $csv.Modified)
-        $tNew.SetAttribute("CREATIONDATE",$dt.ToOADate())
-        $tNew.SetAttribute("CREATIONDATESTRING",($dt.ToShortDateString()+" "+$dt.ToShortTimeString()))
+        $tNew.SetAttribute("CREATIONDATE",$dtOA)
+        $tNew.SetAttribute("CREATIONDATESTRING",$dtST)
+        $tNew.SetAttribute("LASTMOD",$dtOA)
+        $tNew.SetAttribute("LASTMODSTRING",$dtST)
 
         $lbl = $csv.AllLabels
         if ($lbl.IndexOf("Defect") -ge 0) {
@@ -624,17 +666,24 @@ function ToDoList-UpdateTasks
         # And insert new task in ToDoList
         $tApp = $tParent.AppendChild($tNew)
 
-        $script:modified = $TRUE
+        ToDoList-PrintUpInfo $csv.ID "Created" $csv.Summary
+
+        $is_modified = $TRUE
         #$csv
         #$tApp
         #$tNew
 
       # or existing one? Update stars and "Fixed" state
       } else {
+        $printed = $FALSE
+
         if (IsNumeric($csv.Stars)) {
           #Write-Host ("Updating stars for "+$csv.ID+" to "+$csv.Stars+" : "+$tt.Title)
-          ToDoList-SetStars -new $csv.Stars -t $tt -x $x -DoSave $FALSE
+          $stars_modified = ToDoList-SetStars -new $csv.Stars -t $tt -x $x -DoSave $FALSE
           #"Stars updated"
+          if ($stars_modified) {
+            ToDoList-PrintUpInfo $csv.ID ("Stars "+$csv.Stars) $csv.Summary
+          }
         }
 
         $sPercent = "0"
@@ -642,10 +691,25 @@ function ToDoList-UpdateTasks
         if ($tt.PERCENTDONE -ne $sPercent) {
           $tt.SetAttribute("PERCENTDONE",$sPercent)
           #DONEDATE="41604.05045139" DONEDATESTRING="26.11.2013 1:12"
-          $dt = (Get-Date $csv.Modified)
-          $tt.SetAttribute("DONEDATE",$dt.ToOADate())
-          $tt.SetAttribute("DONEDATESTRING",($dt.ToShortDateString()+" "+$dt.ToShortTimeString()))
-          $script:modified = $TRUE
+          $tt.SetAttribute("DONEDATE",$dtOA)
+          $tt.SetAttribute("DONEDATESTRING",$dtST)
+          $is_modified = $TRUE
+          ToDoList-PrintUpInfo $csv.ID "Fixed" $csv.Summary
+          $printed = $TRUE
+        }
+
+        # Date of last modification
+        $saveMod = "0"
+        if ($tt.HasAttribute("LASTMOD")) { $saveMod = $tt.LASTMOD }
+        elseif ($tt.HasAttribute("CREATIONDATE")) { $saveMod = $tt.CREATIONDATE }
+        if ($saveMod -ne $dtOA) {
+          $force_html = $TRUE
+          $tt.SetAttribute("LASTMOD",$dtOA)
+          $tt.SetAttribute("LASTMODSTRING",$dtST)
+          $is_modified = $TRUE
+          if (-Not $printed) {
+            ToDoList-PrintUpInfo $csv.ID "Changed" $csv.Summary
+          }
         }
       }
 
@@ -653,7 +717,9 @@ function ToDoList-UpdateTasks
       if ($Issues_Save_HTML -ne "") {
         $WriteIssue = $FALSE
         $file = ($Issues_Save_HTML+"Issue"+$csv.ID+".htm")
-        if (-Not (Test-Path $file)) {
+        if ($force_html) {
+          $WriteIssue = $TRUE
+        } elseif (-Not (Test-Path $file)) {
           $WriteIssue = $TRUE
         } elseif ((Get-Item $file).LastWriteTime -lt (Get-Date $csv.Modified)) {
           $WriteIssue = $TRUE
@@ -672,8 +738,9 @@ function ToDoList-UpdateTasks
       }
     }
 
-    #powershell bug? Can't change value of the parent scope variable?
-    return #$script:new_id
+    if ($is_modified) { $script:modified = $TRUE }
+
+    return $is_modified
   }
 
   $iLastIssueNo = ToDoList-GetLastIssueNo
@@ -686,12 +753,21 @@ function ToDoList-UpdateTasks
 
 
   $iPerBlock = 100
-  $iBlocks = [int]($iLastIssueNo / $iPerBlock)
+  if ($script:LastMode) {
+    # in most cases, changes may happens only in the few first issues
+    # thats why, retrieving first 100 Issues is almost enough
+    $iBlocks = 1
+  } else {
+    $iBlocks = [int]($iLastIssueNo / $iPerBlock)
+  }
 
   $script:modified = $FALSE
   $NotCompleted = $FALSE
 
-  for ($iBlock=0; (($iBlock -lt $iBlocks) -Or ($NotCompleted)) ; $iBlock++) {
+  $script:Completed = $FALSE
+
+  for ($iBlock=0; -Not $script:Completed ; $iBlock++) {
+  #for ($iBlock=0; ($iBlock -lt $iBlocks) -Or ($NotCompleted) ; $iBlock++) {
     $sAct = ("Processing issues "+[String]($iBlock*100+1)+"..."+[String]($iBlock*100+$iPerBlock))
     $sStat = "Downloading issues via CSV"
     if ($iBlock -ge $iBlocks) { $iBlocks = $iBlock+1 }
@@ -700,7 +776,11 @@ function ToDoList-UpdateTasks
     Write-Progress -Activity $sAct -Status $sStat -percentcomplete $iPercent
 
     $NotCompleted = $FALSE
-    $http = ($csv_prefix + "&num=" + [String]$iPerBlock + "&start=" + [String]($iBlock*$iPerBlock))
+    if ($LastMode) {
+      $http = ($recent_csv_prefix + "&num=" + [String]$iPerBlock + "&start=" + [String]($iBlock*$iPerBlock))
+    } else {
+      $http = ($csv_prefix + "&num=" + [String]$iPerBlock + "&start=" + [String]($iBlock*$iPerBlock))
+    }
     $CsvData = $nwc.DownloadString($http)
     if ($CsvData.Length -ge 100) {
       $sStat = "Processing issues"
@@ -716,9 +796,12 @@ function ToDoList-UpdateTasks
         $NotCompleted = ($CSVRows.Length -eq 101)
 
         $iRow = 0
-        $CSVRows | foreach {
-          if (IsNumeric($_.ID)) {
-            $sStat = ($_.ID + " - " + (iif -c ($_.Summary -eq $null) -a "<empty>" -b $_.Summary ) )
+        #$CSVRows | foreach { # foreach is not so handy as can be...
+        for ($iRow = 0; $iRow -lt $CSVRows.Length; $iRow++) {
+          $cs = $CSVRows[$iRow]
+
+          if (IsNumeric($cs.ID)) {
+            $sStat = ($cs.ID + " - " + (iif -c ($cs.Summary -eq $null) -a "<empty>" -b $cs.Summary ) )
 
             #Write-Progress -id 1 -Activity "Processing rows" -status $sInfo -percentcomplete ($iRow * 100 / $CSVRows.Length)
             if ($iBlock -ge $iBlocks) { $iBlocks = $iBlock+1 }
@@ -728,13 +811,22 @@ function ToDoList-UpdateTasks
             }
           }
 
-          #$new_id = ProcessRow $_
-          ProcessRow $_
-          #$script:new_id
-          #$new_id
-          $iRow++
+          $is_modified = ProcessRow $cs
+
+          if ($script:LastMode -and -not $is_modified) {
+            break
+          }
         }
       }
+
+    }
+
+    if ($LastMode -And -Not $is_modified) {
+      $script:Completed = $TRUE
+    }
+    #elseif ((($iBlock+1) -ge $iBlocks) -And (-Not $NotCompleted)) {
+    elseif (-Not $NotCompleted) {
+      $script:Completed = $TRUE
     }
   }
 
@@ -754,7 +846,7 @@ function ToDoList-GetLastIssueNo()
 
   try {
     $nwc = ToDoList-CreateWebClient
-    $http = ($last_csv_prefix + "0")
+    $http = ($last_csv_prefix + "&num=10&start=0")
     $CsvData = $nwc.DownloadString($http)
     if ($CsvData.Length -ge 100) {
       $Csv = ConvertFrom-Csv $CsvData
@@ -769,27 +861,103 @@ function ToDoList-GetLastIssueNo()
   return $LastNo
 }
 
+function ToDoList-GetAllTasks()
+{
+  ToDoList-GetTasks -priority 0 -sort id
+}
+
+function ToDoList-FindTask([String]$find)
+{
+  ToDoList-GetTasks -priority 0 -find $find
+}
+
+function ToDoList-OpenTask([int]$id=0,[int]$eid=0)
+{
+  $http = ""
+  if ($eid -ne 0) {
+    $http = ($googlecode_issue_href + $eid)
+  } else {
+    $t = ToDoList-GetTask $id
+    if ($t.HasAttribute("FILEREFPATH")) {
+      $http = $t.FILEREFPATH
+    } elseif ($t.HasAttribute("EXTERNALID")) {
+      $http = ($googlecode_issue_href + $t.EXTERNALID)
+    }
+  }
+
+  if ($http -ne "") {
+    & start $http
+  }
+}
+function ToDoList-OpenTaskInt([int]$id)
+{
+  ToDoList-OpenTask -id $id
+}
+function ToDoList-OpenTaskExt([int]$eid)
+{
+  ToDoList-OpenTask -eid $eid
+}
 
 if ($aliases -eq "yes") {
-  Set-Alias Stars ToDoList-GetStars
-  Set-Alias Task  ToDoList-GetTask
-  Set-Alias Tasks ToDoList-GetTasks
-  Set-Alias Fix   ToDoList-TaskFix
-  Set-Alias UnFix ToDoList-TaskUnFix
-  Set-Alias cmt   ToDoList-GetComment
-  Set-Alias xml   ToDoList-LoadXml
+  Set-Alias Stars    ToDoList-GetStars
+  Set-Alias Task     ToDoList-GetTask
+  Set-Alias TFind    ToDoList-FindTask
+  Set-Alias TOpen    ToDoList-OpenTaskInt
+  Set-Alias IOpen    ToDoList-OpenTaskExt
+  Set-Alias List     ToDoList-GetTasks
+  Set-Alias ListAll  ToDoList-GetAllTasks
+  Set-Alias Fix      ToDoList-TaskFix
+  Set-Alias UnFix    ToDoList-TaskUnFix
+  Set-Alias cmt      ToDoList-ShowComment
+  Set-Alias xml      ToDoList-LoadXml
+  Set-Alias Update   ToDoList-UpdateTasks
+  Set-Alias Update   ToDoList-UpdateTasks
 }
 
 #Task 1425
 #UnFix 1425
 #Task 1425
 
-if ($workmode -eq "tasks") {
+function Hint()
+{
+  Write-Host -ForegroundColor Green -NoNewline "Commands: "
+  Write-Host -NoNewline "Hint"
+  Write-Host -ForegroundColor Gray -NoNewline "; "
+  Write-Host -NoNewline "List "
+  Write-Host -ForegroundColor Gray -NoNewline "[MinPriority [ID|CD]]; "
+  Write-Host -NoNewline "ListAll"
+  Write-Host -ForegroundColor Gray -NoNewline "; <"
+  Write-Host -NoNewline "Task"
+  Write-Host -ForegroundColor Gray -NoNewline "|"
+  Write-Host -NoNewline "Cmt"
+  Write-Host -ForegroundColor Gray -NoNewline "|"
+  Write-Host -NoNewline "Stars"
+  Write-Host -ForegroundColor Gray -NoNewline "|"
+  Write-Host -NoNewline "Fix"
+  Write-Host -ForegroundColor Gray -NoNewline "|"
+  Write-Host -NoNewline "UnFix"
+  Write-Host -ForegroundColor Gray "> TaskID | -eid IssueNo"
+  Write-Host -NoNewline "          TFind "
+  Write-Host -ForegroundColor Gray -NoNewline "text; "
+  Write-Host -NoNewline "TOpen "
+  Write-Host -ForegroundColor Gray -NoNewline "TaskID; "
+  Write-Host -NoNewline "IOpen "
+  Write-Host -ForegroundColor Gray -NoNewline "IssueNo"
+  Write-Host "`r`n"
+}
+
+if (($workmode -eq "tasks") -Or ($workmode -eq "list")) {
+  Hint
+
   ToDoList-GetTasks -priority $listpriority
+
+  if ($workmode -eq "tasks") {
+    ToDoList-UpdateTasks "last"
+  }
 
 } elseif ($workmode -eq "update") {
   # Load new Issues from GC and update Stars count in all tasks
-  ToDoList-UpdateTasks
+  ToDoList-UpdateTasks $options
 
 } elseif ($workmode -eq "test") {
   #ToDoList-SetStars 1425 10
