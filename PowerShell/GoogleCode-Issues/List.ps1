@@ -243,7 +243,11 @@ function ToDoList-FormatTaskInfo($t)
   #$s += $t.Priority.PadRight(3)
   $s += pad -str ([String](ToDoList-GetStars -t $t)) -pad 3
   #$a = $t.ALLOCATEDBY
-  $s += pad -str (ToDoList-GetTaskChild -t $t -node "TAG") -pad 10
+  if ($t.STATUS -ne $null) {
+    $s += pad -str $t.STATUS -pad 10
+  } else {
+    $s += pad -str (ToDoList-GetTaskChild -t $t -node "TAG") -pad 10
+  }
   $s += pad -str $t.ALLOCATEDBY -pad 12
   #if ($t.ALLOCATEDBY -ne $null) { $s += $t.ALLOCATEDBY.Substring(0,11).PadRight(12) } else { $s += "".PadRight(12) }
   return $s
@@ -251,11 +255,15 @@ function ToDoList-FormatTaskInfo($t)
 
 function ToDoList-TaskHasString([System.Xml.XmlElement]$t,[String]$find)
 {
-  if (($_.TITLE -ne $null) -And ($_.TITLE.IndexOf($find) -ge 0)) { return $TRUE }
-  if (($_.COMMENTS -ne $null) -And ($_.COMMENTS.IndexOf($find) -ge 0)) { return $TRUE }
-  if (($_.ALLOCATEDBY -ne $null) -And ($_.ALLOCATEDBY.IndexOf($find) -ge 0)) { return $TRUE }
+  # Ensure that it will be case-insensitive
+  $find = $find.ToUpper()
+  if (($_.TITLE -ne $null) -And ($_.TITLE.ToUpper().IndexOf($find) -ge 0)) { return $TRUE }
+  if (($_.COMMENTS -ne $null) -And ($_.COMMENTS.ToUpper().IndexOf($find) -ge 0)) { return $TRUE }
+  if (($_.ALLOCATEDBY -ne $null) -And ($_.ALLOCATEDBY.ToUpper().IndexOf($find) -ge 0)) { return $TRUE }
   return $FALSE
 }
+
+#function ToDoList-GetTaskMatch([System.Xml.XmlElement]$t,[int]$priority=8,[String]$find="")
 
 function ToDoList-GetTasks([int]$priority=8,[String]$sort="",[xml]$x=$null,[String]$find="")
 {
@@ -286,7 +294,15 @@ function ToDoList-TaskFix([int]$i,[xml]$x=$null,[int]$eid=0)
       $x = ToDoList-LoadXml
     }
     $t = ToDoList-GetTask -i $i -x $x -eid $eid
+    
     $t.PERCENTDONE = "100"
+
+    $dt = Get-Date
+    $dtOA = [String]$dt.ToOADate() # ex "41604.05045139"
+    $dtST = ($dt.ToShortDateString()+" "+$dt.ToShortTimeString())
+    $t.SetAttribute("DONEDATE",$dtOA)
+    $t.SetAttribute("DONEDATESTRING",$dtST)
+
     ToDoList-SaveXml $x
     ToDoList-GetTasks -x $x
   }
@@ -303,7 +319,11 @@ function ToDoList-TaskUnFix([int]$i,[xml]$x=$null,[int]$eid=0)
       $x = ToDoList-LoadXml
     }
     $t = ToDoList-GetTask -i $i -x $x -eid $eid
+
     $t.PERCENTDONE = "0"
+    $t.RemoveAttribute("DONEDATE")
+    $t.RemoveAttribute("DONEDATESTRING")
+
     ToDoList-SaveXml $x
     ToDoList-GetTasks -x $x
   }
@@ -313,6 +333,60 @@ function ToDoList-TaskUnFix([int]$i,[xml]$x=$null,[int]$eid=0)
   }
 }
 
+function ToDoList-TaskSet([int]$i,[String]$field="",[String]$value="",[xml]$x=$null,[int]$eid=0)
+{
+  try {
+    $field = $field.ToUpper()
+    if ($field -eq "PERCENTDONE") {
+      if ($value -eq "100") {
+        ToDoList-TaskFix -i $i -x $x -eid $eid
+      } else {
+        ToDoList-TaskUnFix -i $i -x $x -eid $eid
+      }
+      return
+    }
+    elseif ($field -eq "STARS") {
+      ToDoList-SetStars -i $i=0 -new $value -x $x -DoSave $TRUE -eid $eid
+      return
+    }
+
+    if ($x -eq $null) {
+      $x = ToDoList-LoadXml
+    }
+
+    $t = ToDoList-GetTask -i $i -x $x -eid $eid
+
+    if ($t.HasAttribute($field) -Or ($field -eq "STATUS")) {
+      $t.SetAttribute($field,$value)
+    } elseif ($field -eq "TAG") {
+      ToDoList-SetTaskChild -node $field -new $value -x $x -t $t -DoSave $FALSE
+    } else {
+      Write-Host -ForegroundColor Red ("Field '"+$field+"' not found in the Task!")
+      return
+    }
+
+    ToDoList-SaveXml $x
+    ToDoList-GetTasks -x $x
+  }
+  catch {
+    ToDoList-DumpException $error[0]
+    Write-Host -ForegroundColor Red ("Fix "+$i+" failed!")
+  }
+}
+
+function ToDoList-TaskStatus([int]$i,[String]$value="",[xml]$x=$null,[int]$eid=0)
+{
+  if ($value -eq "") {
+    $t = ToDoList-GetTask -i $i -x $x -eid $eid
+    if ($t.HasAttribute("STATUS")) {
+      $t.STATUS
+    } else {
+      Write-Host -ForegroundColor Red "No status yet"
+    }
+  } else {
+    ToDoList-TaskSet -i $i -field "STATUS" -value $value -x $x -eid $eid
+  }
+}
 
 #$i = $x.SelectNodes("TODOLIST//TASK")[0]
 #$x.SelectNodes("TODOLIST//TASK") | ft
@@ -691,6 +765,9 @@ function ToDoList-UpdateTasks([String]$options="")
         if ($tt.PERCENTDONE -ne $sPercent) {
           $tt.SetAttribute("PERCENTDONE",$sPercent)
           #DONEDATE="41604.05045139" DONEDATESTRING="26.11.2013 1:12"
+          # $dt = (Get-Date $csv.Modified)
+          # $dtOA = [String]$dt.ToOADate() # ex "41604.05045139"
+          # $dtST = ($dt.ToShortDateString()+" "+$dt.ToShortTimeString())
           $tt.SetAttribute("DONEDATE",$dtOA)
           $tt.SetAttribute("DONEDATESTRING",$dtST)
           $is_modified = $TRUE
@@ -702,7 +779,9 @@ function ToDoList-UpdateTasks([String]$options="")
         $saveMod = "0"
         if ($tt.HasAttribute("LASTMOD")) { $saveMod = $tt.LASTMOD }
         elseif ($tt.HasAttribute("CREATIONDATE")) { $saveMod = $tt.CREATIONDATE }
-        if ($saveMod -ne $dtOA) {
+        else { $saveMod = "-1" }
+        #if ($saveMod -ne $dtOA) {
+        if ([math]::Abs(([Double]$saveMod)-([Double]$dtOA)) -gt 0.0000001) {
           $force_html = $TRUE
           $tt.SetAttribute("LASTMOD",$dtOA)
           $tt.SetAttribute("LASTMODSTRING",$dtST)
@@ -903,11 +982,14 @@ if ($aliases -eq "yes") {
   Set-Alias Task     ToDoList-GetTask
   Set-Alias TFind    ToDoList-FindTask
   Set-Alias TOpen    ToDoList-OpenTaskInt
+  Set-Alias i        ToDoList-OpenTaskExt
   Set-Alias IOpen    ToDoList-OpenTaskExt
   Set-Alias List     ToDoList-GetTasks
   Set-Alias ListAll  ToDoList-GetAllTasks
   Set-Alias Fix      ToDoList-TaskFix
   Set-Alias UnFix    ToDoList-TaskUnFix
+  Set-Alias TSet     ToDoList-TaskSet
+  Set-Alias TStat    ToDoList-TaskStatus
   Set-Alias cmt      ToDoList-ShowComment
   Set-Alias xml      ToDoList-LoadXml
   Set-Alias Update   ToDoList-UpdateTasks
@@ -941,8 +1023,12 @@ function Hint()
   Write-Host -ForegroundColor Gray -NoNewline "text; "
   Write-Host -NoNewline "TOpen "
   Write-Host -ForegroundColor Gray -NoNewline "TaskID; "
-  Write-Host -NoNewline "IOpen "
-  Write-Host -ForegroundColor Gray -NoNewline "IssueNo"
+  Write-Host -NoNewline "IOpen|i "
+  Write-Host -ForegroundColor Gray -NoNewline "IssueNo; "
+  Write-Host -NoNewline "TSet "
+  Write-Host -ForegroundColor Gray -NoNewline "TaskID FieldName FieldVal; "
+  Write-Host -NoNewline "TStat "
+  Write-Host -ForegroundColor Gray -NoNewline "TaskID [Status]"
   Write-Host "`r`n"
 }
 
