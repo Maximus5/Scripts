@@ -642,10 +642,10 @@ function ToDoList-UpdateComment([int]$i=0,[xml]$x=$null,[System.Xml.XmlElement]$
   return $cmt
 }
 
-function ToDoList-PrintUpInfo([String]$id="",[String]$act="",[String]$txt="")
+function ToDoList-PrintUpInfo([String]$id="",[String]$act="",[String]$txt="",[String]$prefix="Issue")
 {
   if ($id.Length -lt 5) { $id = $id.PadRight(5) }
-  Write-Host -NoNewline -ForegroundColor Green ("Issue "+$id+" ")
+  Write-Host -NoNewline -ForegroundColor Green ($prefix+" "+$id+" ")
   Write-Host -NoNewline -ForegroundColor Yellow $act.PadRight(9)
   Write-Host $txt
 }
@@ -1098,13 +1098,27 @@ function ToDoList-ReadNumber([String]$prompt="",$min="",$max="")
   return "" # fail
 }
 
-function ToDoList-ReadMultiLine([String]$prompt="")
+function ToDoList-ReadMultiLine([String]$prompt="",[String]$append_to="")
 {
-  if ($prompt -ne "") { Write-Host -ForegroundColor Gray ($prompt + " (press Enter on new line to end): ") }
+  if ($prompt -ne "") {
+    if ($append_to -eq "") {
+      Write-Host -ForegroundColor Gray ($prompt + " (press Enter on new line to end): ")
+    } else {
+      Write-Host -ForegroundColor Gray ($prompt + " (press Enter on new line to end, type '+' (plus sign) on first line to append): ")
+    }
+  }
   $all = ""
   $n = Read-Host
   while ($n -ne "") {
-    if ($all -eq "") { $all = $n } else { $all += ("`r`n" + $n) }
+    if ($all -eq "") {
+      if (($n -eq "+") -And ($append_to -ne "")) {
+        $all = $append_to
+      } else {
+        $all = $n
+      }
+    } else {
+      $all += ("`r`n" + $n)
+    }
     $n = Read-Host
   }
   return $all
@@ -1188,7 +1202,7 @@ function ToDoList-NewTask([xml]$x=$null)
   # And insert new task in ToDoList
   $tApp = $tParent.AppendChild($tNew)
 
-  ToDoList-PrintUpInfo $tApp.ID "Created" $tApp.TITLE
+  ToDoList-PrintUpInfo $tApp.ID "Created" $tApp.TITLE "Task"
 
   ToDoList-SaveXml $x
 }
@@ -1212,7 +1226,7 @@ function ToDoList-EditTask([int]$i=0,[xml]$x=$null,[int]$eid=0)
   function title($d,$v)
   {
     if ($v -eq $null) { $v = "" }
-    Write-Host -ForegroundColor Gray ($d + "(" + [String]$v + "):")
+    Write-Host -ForegroundColor Gray ($d + " (" + [String]$v + "):")
   }
 
   $is_modified = $FALSE
@@ -1260,8 +1274,11 @@ function ToDoList-EditTask([int]$i=0,[xml]$x=$null,[int]$eid=0)
     $is_modified = $TRUE
   }
 
-  ToDoList-ShowComment -t $t
-  $cmt = ToDoList-ReadMultiLine "Comment"
+  #ToDoList-ShowComment -t $t
+  $s = $t.SelectSingleNode("COMMENTS")
+  if ($s -ne $null) { $cmt_cur = $s."#text" } else { $cmt_cur = "" }
+  Write-Host -ForegroundColor Gray ("Current comment: "+$cmt_cur)
+  $cmt = ToDoList-ReadMultiLine "Comment" $cmt_cur
   if ($cmt -ne "") {
     ToDoList-SetComment -t $t -x $x -new $cmt -DoSave $FALSE
     $is_modified = $TRUE
@@ -1271,7 +1288,7 @@ function ToDoList-EditTask([int]$i=0,[xml]$x=$null,[int]$eid=0)
     $t.SetAttribute("LASTMOD",$dtOA)
     $t.SetAttribute("LASTMODSTRING",$dtST)
 
-    ToDoList-PrintUpInfo $t.ID "Changed" $t.TITLE
+    ToDoList-PrintUpInfo $t.ID "Changed" $t.TITLE "Task"
 
     ToDoList-SaveXml $x
   }
