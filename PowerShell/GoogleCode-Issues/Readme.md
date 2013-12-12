@@ -9,7 +9,9 @@ manager tool. But importing (and maintaining) issues from GoogleCode is hard...
   * Downloading issue attachments to your drive
   * Updating issues "Stars" count in your xml ToDoList
   * Displaying actual (not fixed) issues with priority larger or equal to 8
+  * Displaying issues sorted by priority, id, stars or change date
   * Fixing and UnFixing issues (in your xml) from PowerShell prompt
+  * Creating new tasks and editing existing
 
 ## Usage
 
@@ -33,3 +35,5 @@ In the powershell prompt you can use commands **Fix** and **UnFix**. Both takes 
 Also, you may run script nightly to retrieve new Issues from GoogleCode and update your ToDo xml file
 
     powershell -NoProfile -Command "Import-Module {FullPath}\List.ps1 -ArgumentList update"
+
+Use powershell prompt and type commands, **hint** command will show brief list of functions with arguments

@@ -14,11 +14,13 @@ param([String]$workmode="tasks",[String]$options="",[String]$aliases="yes",[int]
 #   powershell -NoProfile -Command "Import-Module {FullPath}\List.ps1 -ArgumentList update"
 
 $GoogleCodeProjectName = "conemu-maximus5"
+$DefaultAuthor = "Maximus"
 $Script_Working_path = (Get-Location).Path
 $Script_xml_ToDo_path = ($Script_Working_path+"\ConEmu-ToDo.xml")
 $Script_xml_Save_path = ($Script_Working_path+"\ConEmu-ToDo.xml")
 $Issues_Save_CSV = ($Script_Working_path+"\html_list\Issues-")
 $Issues_Save_HTML = ($Script_Working_path+"\html\")
+$SkipAutoUpdatePC = "MAX"
 # Some hrefs
 $googlecode_issue_href = ("http://code.google.com/p/" + $GoogleCodeProjectName + "/issues/detail?id=")
 $http_prefix = ("http://code.google.com/p/" + $GoogleCodeProjectName + "/issues/detail?id=")
@@ -31,6 +33,8 @@ $recent_csv_prefix  = ("http://code.google.com/p/" + $GoogleCodeProjectName + "/
 $xml_path_imported = "/TODOLIST//TASK[@TITLE='Imported']"
 # Crash reports will be placed here
 $xml_path_crashs = "/TODOLIST/TASK[starts-with(@TITLE,'Crashes')]"
+# List of root items
+$xml_path_roots = "/TODOLIST/TASK"
 # Subtask "Fixed", if not found - fixed tasks
 # will be placed in the "Imported" task
 $xml_path_importedFixed = "TASK[@TITLE='Fixed']"
@@ -67,6 +71,7 @@ function ToDoList-LoadXml
 
 function ToDoList-SaveXml([xml]$x)
 {
+  Write-Host -ForegroundColor Green "Saving changes..."
   $x.Save($Script_xml_Save_path)
 }
 
@@ -155,11 +160,15 @@ function ToDoList-GetStars([int]$i=0,[xml]$x=$null,[System.Xml.XmlElement]$t=$nu
   $s = $t.SelectSingleNode("CUSTOMATTRIB[@ID='CUST_STARS']")
 
   if ($s -eq $null) {
-    0
+    return 0
   } elseif ($s.HasAttribute("VALUE")) {
-    $s.VALUE
+    if (IsNumeric $s.VALUE) {
+      return [int]$s.VALUE
+    } else {
+      return 0
+    }
   } else {
-    0
+    return 0
   }
 }
 
@@ -265,26 +274,60 @@ function ToDoList-TaskHasString([System.Xml.XmlElement]$t,[String]$find)
 
 #function ToDoList-GetTaskMatch([System.Xml.XmlElement]$t,[int]$priority=8,[String]$find="")
 
-function ToDoList-GetTasks([int]$priority=8,[String]$sort="",[xml]$x=$null,[String]$find="")
+function ToDoList-GetTasks($parm1=8,$parm2="",[xml]$x=$null,[String]$find="")
 {
+  $priority = 8
+  $sort = ""
+
+  # simplify cmd line calls
+  if ($parm1 -ne "") {
+    if (IsNumeric $parm1) {
+      $priority = [int]$parm1
+    } else {
+      $sort = $parm1
+    }
+  }
+  if ($parm2 -ne "") {
+    if ($sort -eq "") {
+      $sort = $parm2
+    }
+  }
+
+
   Write-Host -ForegroundColor Green -NoNewline "Please wait, loading..."
   if ($x -eq $null) {
     $x = ToDoList-LoadXml
   }
+
   Write-Host -ForegroundColor Green " filtering, sorting..."
   #$x.SelectNodes("TODOLIST//TASK") | where { [int]$_.Priority -ge 8} | where { [int]$_.PERCENTDONE -le 99} | sort {[int]$_.Priority} | ft "ID","EXTERNALID","PRIORITY",{Stars -t $_},"ALLOCATEDBY","TITLE" -AutoSize -HideTableHeader
   #$x.SelectNodes("TODOLIST//TASK") | where { [int]$_.Priority -ge 8} | where { [int]$_.PERCENTDONE -le 99} | sort {[int]$_.Priority},{[double]$_.CreationDate} | ft "ID","EXTERNALID","PRIORITY",{Stars -t $_},"ALLOCATEDBY","TITLE" -AutoSize -HideTableHeader
   if ($find -ne "") {
-    $x.SelectNodes("TODOLIST//TASK") `
+    $local:tasks = $x.SelectNodes("TODOLIST//TASK") `
       | where { [int]$_.PERCENTDONE -le 99} | where {ToDoList-TaskHasString $_ $find} `
-      | sort {[int]$_.ID} | ft {ToDoList-FormatTaskInfo $_},"TITLE" -AutoSize -HideTableHeader
+      | sort {[int]$_.ID}
   } elseif ($sort -eq "id") {
-    $x.SelectNodes("TODOLIST//TASK") | where { [int]$_.Priority -ge $priority} | where { [int]$_.PERCENTDONE -le 99} | sort {[int]$_.ID} | ft {ToDoList-FormatTaskInfo $_},"TITLE" -AutoSize -HideTableHeader
+    $local:tasks = $x.SelectNodes("TODOLIST//TASK") `
+      | where { [int]$_.Priority -ge $priority} | where { [int]$_.PERCENTDONE -le 99} `
+      | sort {[int]$_.ID}
   } elseif ($sort -eq "cd") {
-    $x.SelectNodes("TODOLIST//TASK") | where { [int]$_.Priority -ge $priority} | where { [int]$_.PERCENTDONE -le 99} | sort {[double](iif -c ($_.LASTMOD -ne $null) -a $_.LASTMOD -b $_.CreationDate)},{[int]$_.ID} | ft {ToDoList-FormatTaskInfo $_},"TITLE" -AutoSize -HideTableHeader
+    $local:tasks = $x.SelectNodes("TODOLIST//TASK") `
+      | where { [int]$_.Priority -ge $priority} | where { [int]$_.PERCENTDONE -le 99} `
+      | sort {[double](iif -c ($_.LASTMOD -ne $null) -a $_.LASTMOD -b $_.CreationDate)},{[int]$_.ID}
+  } elseif (($sort -eq "st") -or ($sort -eq "Stars")) {
+    $local:tasks = $x.SelectNodes("TODOLIST//TASK") `
+      | where { [int]$_.Priority -ge $priority} | where { [int]$_.PERCENTDONE -le 99} `
+      | sort {[int](ToDoList-GetStars -t $_)},{[int]$_.Priority},{[double](iif -c ($_.LASTMOD -ne $null) -a $_.LASTMOD -b $_.CreationDate)},{[int]$_.ID}
   } else {
-    $x.SelectNodes("TODOLIST//TASK") | where { [int]$_.Priority -ge $priority} | where { [int]$_.PERCENTDONE -le 99} | sort {[int]$_.Priority},{[int](ToDoList-GetStars -t $_)},{[double]$_.CreationDate} | ft {ToDoList-FormatTaskInfo $_},"TITLE" -AutoSize -HideTableHeader
+    $local:tasks = $x.SelectNodes("TODOLIST//TASK") `
+      | where { [int]$_.Priority -ge $priority} | where { [int]$_.PERCENTDONE -le 99} `
+      | sort {[int]$_.Priority},{[int](ToDoList-GetStars -t $_)},{[double]$_.CreationDate}
   }
+
+  $local:tasks | ft {ToDoList-FormatTaskInfo $_},"TITLE" -AutoSize -HideTableHeader
+  Write-Host "[2A[1;32;45mTotal count:[1;37;45m " $local:tasks.Length "`r`n"
+
+  return
 }
 
 function ToDoList-TaskFix([int]$i,[xml]$x=$null,[int]$eid=0)
@@ -304,7 +347,7 @@ function ToDoList-TaskFix([int]$i,[xml]$x=$null,[int]$eid=0)
     $t.SetAttribute("DONEDATESTRING",$dtST)
 
     ToDoList-SaveXml $x
-    ToDoList-GetTasks -x $x
+    # ToDoList-GetTasks -x $x
   }
   catch {
     ToDoList-DumpException $error[0]
@@ -325,7 +368,7 @@ function ToDoList-TaskUnFix([int]$i,[xml]$x=$null,[int]$eid=0)
     $t.RemoveAttribute("DONEDATESTRING")
 
     ToDoList-SaveXml $x
-    ToDoList-GetTasks -x $x
+    # ToDoList-GetTasks -x $x
   }
   catch {
     ToDoList-DumpException $error[0]
@@ -366,7 +409,7 @@ function ToDoList-TaskSet([int]$i,[String]$field="",[String]$value="",[xml]$x=$n
     }
 
     ToDoList-SaveXml $x
-    ToDoList-GetTasks -x $x
+    # ToDoList-GetTasks -x $x
   }
   catch {
     ToDoList-DumpException $error[0]
@@ -527,7 +570,7 @@ function ToDoList-ShowComment([int]$i=0,[xml]$x=$null,[System.Xml.XmlElement]$t=
     $t = ToDoList-GetTask -i $i -x $x -eid $eid
   }
 
-  if (($t -ne $null) -And (IsNumeric($t.EXTERNALID))) {
+  if ($t -ne $null) {
     $s = $t.SelectSingleNode("COMMENTS")
   }
 
@@ -538,7 +581,7 @@ function ToDoList-ShowComment([int]$i=0,[xml]$x=$null,[System.Xml.XmlElement]$t=
   if (($s -eq $null) -Or ($s -eq "")) {
     Write-Host -ForegroundColor Red "There is no comments yet"
   } else {
-    Write-Host -ForegroundColor Gray $s."#text".Replace('<a title="" href="/p/conemu-maximus5/wiki/ConEmu">ConEmu</a>','ConEmu')
+    Write-Host -ForegroundColor Cyan $s."#text".Replace('<a title="" href="/p/conemu-maximus5/wiki/ConEmu">ConEmu</a>','ConEmu')
   }
 }
 
@@ -622,7 +665,7 @@ function ToDoList-UpdateTasks([String]$options="")
   $fix_root = $imp_root.SelectSingleNode($xml_path_importedFixed)
   $crash_root = $x.SelectSingleNode($xml_path_crashs)
   if ($imp_root -eq $null) {
-    $imp_root = $x.SelectSingleNode("/TODOLIST/TASK")
+    $imp_root = $x.SelectSingleNode($xml_path_roots)
     if ($imp_root -eq $null) {
       Write-Host -ForegroundColor Red "Todo list is empty, create root tasks!"
       return
@@ -910,7 +953,6 @@ function ToDoList-UpdateTasks([String]$options="")
   }
 
   if ($script:modified) {
-    Write-Host -ForegroundColor Green "Saving changes..."
     ToDoList-SaveXml $x
   } else {
     Write-Host -ForegroundColor Green "Nothing was changed!"
@@ -942,12 +984,12 @@ function ToDoList-GetLastIssueNo()
 
 function ToDoList-GetAllTasks()
 {
-  ToDoList-GetTasks -priority 0 -sort id
+  ToDoList-GetTasks -parm1 0 -parm2 id
 }
 
 function ToDoList-FindTask([String]$find)
 {
-  ToDoList-GetTasks -priority 0 -find $find
+  ToDoList-GetTasks -parm1 0 -find $find
 }
 
 function ToDoList-OpenTask([int]$id=0,[int]$eid=0)
@@ -977,9 +1019,269 @@ function ToDoList-OpenTaskExt([int]$eid)
   ToDoList-OpenTask -eid $eid
 }
 
+function ToDoList-SelectRoot([xml]$x=$null)
+{
+  function pad([String]$str,[int]$pad)
+  {
+    if ($str -ne $null)
+    {
+      if ($str.Length -gt $pad-1) {
+        return ($str.Substring(0,$pad-1)+"…")
+      } else {
+        return $str.PadRight($pad)
+      }
+    } else {
+      return "".PadRight($pad)
+    }
+  }
+
+  if ($x -eq $null) {
+    $x = ToDoList-LoadXml
+  }
+
+  $local:tasks = $x.SelectNodes($xml_path_roots)
+  if ($local:tasks.length -eq 0) {
+    return $null
+  }
+  
+  $local:names = @()
+  $local:tasks | foreach {
+    $local:names += pad $_.TITLE 35
+  }
+  $iCount = $local:names.Length
+  $i2 = [int]($iCount/2)
+
+  for ($i = 0; $i -lt $i2; $i++) {
+    Write-Host -ForegroundColor Yellow (([String]($i+1)).PadRight(3)) -NoNewline
+
+    if (($i + $i2) -lt $iCount) {
+      Write-Host -ForegroundColor Green $local:names[$i] -NoNewline
+      Write-Host -ForegroundColor Yellow ("   " + ([String]($i+$i2+1)).PadRight(3)) -NoNewline
+      Write-Host -ForegroundColor Green $local:names[$i+$i2]
+    } else {
+      Write-Host -ForegroundColor Green $local:names[$i]
+    }
+  }
+
+  Write-Host ("Total root tasks: " + $iCount)
+  $n = Read-Host -Prompt "Choose parent task # (Return to cancel)"
+  if ((IsNumeric $n) -eq $FALSE) {
+    return $null
+  }
+  $i = ([int]$n) - 1
+  if (($i -ge 0) -And ($i -lt $iCount)) {
+    return $local:tasks[$i]
+  }
+
+  return $null
+}
+
+function ToDoList-ReadNumber([String]$prompt="",$min="",$max="")
+{
+  $n = (Read-Host -Prompt $prompt)
+
+  #while (($n -ne "") -And -Not (IsNumeric $n)) {
+  while ($TRUE) {
+    if ($n -eq "") {
+      return "" # stop
+    }
+    if (IsNumeric $n) {
+      if ((($min -eq "") -Or (([int]$min) -le ([int]$n))) `
+          -And (($max -eq "") -Or (([int]$max) -ge ([int]$n)))) {
+        return $n # OK
+      }
+    }
+    
+    $n = (Read-Host -Prompt $prompt)
+  }
+
+  return "" # fail
+}
+
+function ToDoList-ReadMultiLine([String]$prompt="")
+{
+  if ($prompt -ne "") { Write-Host -ForegroundColor Gray ($prompt + " (press Enter on new line to end): ") }
+  $all = ""
+  $n = Read-Host
+  while ($n -ne "") {
+    if ($all -eq "") { $all = $n } else { $all += ("`r`n" + $n) }
+    $n = Read-Host
+  }
+  return $all
+}
+
+function ToDoList-NewTask([xml]$x=$null)
+{
+  function ReadHost($Prompt)
+  {
+    Write-Host -ForegroundColor Gray -NoNewline ($Prompt + ": ")
+    Read-Host
+  }
+
+  if ($x -eq $null) {
+    $x = ToDoList-LoadXml
+  }
+
+  $script:new_id = ([int](($x.SelectNodes("TODOLIST//TASK") | Measure "ID" -Maximum).Maximum) + 1)
+
+  $dt = Get-Date
+  $dtOA = [String]$dt.ToOADate() # ex "41604.05045139"
+  $dtST = ($dt.ToShortDateString()+" "+$dt.ToShortTimeString())
+
+  #Write-Host $new_id
+  $tNew = $x.CreateElement("TASK")
+  $title = ReadHost -Prompt "Summary (Return to cancel)"
+  if ($title -eq "") {
+    return
+  }
+  $tNew.SetAttribute("TITLE",$title)
+  $tNew.SetAttribute("ID",  [String]$script:new_id)
+  $tNew.SetAttribute("REFID","0")
+  $tNew.SetAttribute("COMMENTSTYPE","PLAIN_TEXT")
+  $tNew.SetAttribute("ALLOCATEDBY", $DefaultAuthor)
+  $tNew.SetAttribute("FILEREFPATH", (ReadHost -Prompt "RefPath"))
+  $tNew.SetAttribute("CREATEDBY",   $DefaultAuthor)
+  #$tNew.SetAttribute("EXTERNALID",  $csv.ID)
+  $tNew.SetAttribute("RISK","0")
+  #$tNew.SetAttribute("PERCENTDONE",$sPercent) # it will be set in SelectParent function
+  $priority = ToDoList-ReadNumber "Priority (0..10)" 0 10
+  if ($priority -eq "") {
+    return
+  }
+  $tNew.SetAttribute("PRIORITY",$priority)
+  #$tNew.SetAttribute("PRIORITYCOLOR","15732480")
+  #$tNew.SetAttribute("PRIORITYWEBCOLOR","#000FF0")
+  $tNew.SetAttribute("CREATIONDATE",$dtOA)
+  $tNew.SetAttribute("CREATIONDATESTRING",$dtST)
+  $tNew.SetAttribute("LASTMOD",$dtOA)
+  $tNew.SetAttribute("LASTMODSTRING",$dtST)
+
+  $tag = ReadHost -Prompt "Tag (Defect/Other/Wiki/Enhance)"
+  if (($tag -eq "Defect") -Or ($tag -eq "d")) {
+    ToDoList-SetTaskChild -node "TAG" -new "Defect" -x $x -t $tNew -DoSave $FALSE
+  } elseif (($tag -eq "Other") -Or ($tag -eq "o")) {
+    ToDoList-SetTaskChild -node "TAG" -new "Other" -x $x -t $tNew -DoSave $FALSE
+  } elseif (($tag -eq "Wiki") -Or ($tag -eq "w")) {
+    ToDoList-SetTaskChild -node "TAG" -new "Wiki" -x $x -t $tNew -DoSave $FALSE
+  } elseif (($tag -eq "Enhance") -Or ($tag -eq "e")) {
+    ToDoList-SetTaskChild -node "TAG" -new "Enhance" -x $x -t $tNew -DoSave $FALSE
+  }
+
+  $stars = ToDoList-ReadNumber "Stars (1+ or Return)" 1
+  if ($stars -ne "") {
+    ToDoList-SetStars -new $stars -t $tNew -x $x -DoSave $FALSE
+  }
+
+  $cmt = ToDoList-ReadMultiLine "Comment"
+  if ($cmt -ne "") {
+    ToDoList-SetComment -t $tNew -x $x -new $cmt -DoSave $FALSE
+  }
+
+  # Choose parent task
+  $tParent = ToDoList-SelectRoot $x
+
+  if ($tParent -eq $null) {
+    Write-Host -ForegroundColor Red "Aborted!!!"
+    return
+  }
+
+  # And insert new task in ToDoList
+  $tApp = $tParent.AppendChild($tNew)
+
+  ToDoList-PrintUpInfo $tApp.ID "Created" $tApp.TITLE
+
+  ToDoList-SaveXml $x
+}
+
+function ToDoList-EditTask([int]$i=0,[xml]$x=$null,[int]$eid=0)
+{
+  if ($x -eq $null) {
+    $x = ToDoList-LoadXml
+  }
+
+  $t = ToDoList-GetTask -i $i -x $x -eid $eid
+  if ($t -eq $null) {
+    Write-Host -ForegroundColor Red "Task not found!"
+    return
+  }
+
+  $dt = Get-Date
+  $dtOA = [String]$dt.ToOADate() # ex "41604.05045139"
+  $dtST = ($dt.ToShortDateString()+" "+$dt.ToShortTimeString())
+
+  function title($d,$v)
+  {
+    if ($v -eq $null) { $v = "" }
+    Write-Host -ForegroundColor Gray ($d + "(" + [String]$v + "):")
+  }
+
+  $is_modified = $FALSE
+
+  title "Summary" $t.TITLE
+  $newval = Read-Host
+  if (($newval -ne "") -And ($newval -ne $t.TITLE)) {
+    $t.SetAttribute("TITLE",$newval)
+    $is_modified = $TRUE
+  }
+  
+  title "RefPath" $t.FILEREFPATH
+  $newval = Read-Host
+  if (($newval -ne "") -And ($newval -ne $t.TITLE)) {
+    $t.SetAttribute("FILEREFPATH",$newval)
+    $is_modified = $TRUE
+  }
+
+  title "Priority" $t.PRIORITY
+  $newval = Read-Host
+  if (($newval -ne "") -And ($newval -ne $t.TITLE)) {
+    $t.SetAttribute("PRIORITY",$newval)
+    $is_modified = $TRUE
+  }
+
+  title "Tag [Defect/Other/Wiki/Enhance]" $t.TAG
+  $tag = Read-Host
+  if ($tag -ne "") {
+    if (($tag -eq "Defect") -Or ($tag -eq "d")) {
+      ToDoList-SetTaskChild -node "TAG" -new "Defect" -x $x -t $tNew -DoSave $FALSE
+    } elseif (($tag -eq "Other") -Or ($tag -eq "o")) {
+      ToDoList-SetTaskChild -node "TAG" -new "Other" -x $x -t $tNew -DoSave $FALSE
+    } elseif (($tag -eq "Wiki") -Or ($tag -eq "w")) {
+      ToDoList-SetTaskChild -node "TAG" -new "Wiki" -x $x -t $tNew -DoSave $FALSE
+    } elseif (($tag -eq "Enhance") -Or ($tag -eq "e")) {
+      ToDoList-SetTaskChild -node "TAG" -new "Enhance" -x $x -t $tNew -DoSave $FALSE
+    }
+    $is_modified = $TRUE
+  }
+
+  title "Stars" (ToDoList-GetStars -t $t)
+  $stars = Read-Host
+  if ($stars -ne "") {
+    ToDoList-SetStars -new $stars -t $t -x $x -DoSave $FALSE
+    $is_modified = $TRUE
+  }
+
+  ToDoList-ShowComment -t $t
+  $cmt = ToDoList-ReadMultiLine "Comment"
+  if ($cmt -ne "") {
+    ToDoList-SetComment -t $t -x $x -new $cmt -DoSave $FALSE
+    $is_modified = $TRUE
+  }
+
+  if ($is_modified) {
+    $t.SetAttribute("LASTMOD",$dtOA)
+    $t.SetAttribute("LASTMODSTRING",$dtST)
+
+    ToDoList-PrintUpInfo $t.ID "Changed" $t.TITLE
+
+    ToDoList-SaveXml $x
+  }
+}
+
 if ($aliases -eq "yes") {
   Set-Alias Stars    ToDoList-GetStars
   Set-Alias Task     ToDoList-GetTask
+  Set-Alias TNew     ToDoList-NewTask
+  Set-Alias TEdit    ToDoList-EditTask
   Set-Alias TFind    ToDoList-FindTask
   Set-Alias TOpen    ToDoList-OpenTaskInt
   Set-Alias i        ToDoList-OpenTaskExt
@@ -1006,7 +1308,7 @@ function Hint()
   Write-Host -NoNewline "Hint"
   Write-Host -ForegroundColor Gray -NoNewline "; "
   Write-Host -NoNewline "List "
-  Write-Host -ForegroundColor Gray -NoNewline "[MinPriority [ID|CD]]; "
+  Write-Host -ForegroundColor Gray -NoNewline "[MinPriority [ID|CD|STars]]; "
   Write-Host -NoNewline "ListAll"
   Write-Host -ForegroundColor Gray -NoNewline "; <"
   Write-Host -NoNewline "Task"
@@ -1019,14 +1321,24 @@ function Hint()
   Write-Host -ForegroundColor Gray -NoNewline "|"
   Write-Host -NoNewline "UnFix"
   Write-Host -ForegroundColor Gray "> TaskID | -eid IssueNo"
-  Write-Host -NoNewline "          TFind "
+
+  ###
+  Write-Host -NoNewline "          "
+  Write-Host -NoNewline "TNew"
+  Write-Host -ForegroundColor Gray -NoNewline "; "
+  Write-Host -NoNewline "TEdit "
+  Write-Host -ForegroundColor Gray -NoNewline "TaskID | -eid IssueNo; "
+  Write-Host -NoNewline "TFind "
   Write-Host -ForegroundColor Gray -NoNewline "text; "
   Write-Host -NoNewline "TOpen "
   Write-Host -ForegroundColor Gray -NoNewline "TaskID; "
   Write-Host -NoNewline "IOpen|i "
   Write-Host -ForegroundColor Gray -NoNewline "IssueNo; "
   Write-Host -NoNewline "TSet "
-  Write-Host -ForegroundColor Gray -NoNewline "TaskID FieldName FieldVal; "
+  Write-Host -ForegroundColor Gray "TaskID FieldName FieldVal"
+
+  ###
+  Write-Host -NoNewline "          "
   Write-Host -NoNewline "TStat "
   Write-Host -ForegroundColor Gray -NoNewline "TaskID [Status]"
   Write-Host "`r`n"
@@ -1035,11 +1347,11 @@ function Hint()
 if (($workmode -eq "tasks") -Or ($workmode -eq "list")) {
   Hint
 
-  ToDoList-GetTasks -priority $listpriority
-
-  if ($workmode -eq "tasks") {
+  if (($workmode -eq "tasks") -And (($SkipAutoUpdatePC -eq "") -Or ($env:COMPUTERNAME -ne "MAX"))) {
     ToDoList-UpdateTasks "last"
   }
+
+  ToDoList-GetTasks -parm1 $listpriority
 
 } elseif ($workmode -eq "update") {
   # Load new Issues from GC and update Stars count in all tasks
