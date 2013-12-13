@@ -83,6 +83,11 @@ function ToDoList-GetTask([int]$i=0,[xml]$x=$null,[int]$eid=0)
     $x = ToDoList-LoadXml
   }
 
+  if (($i -eq 0) -And ($eid -eq 0)) {
+    Write-Host -ForegroundColor Gray "TaskID: " -NoNewline
+    $i = [int](Read-Host)
+  }
+
   if ($i -gt 0) {
     $x_path = ("TODOLIST//TASK[@ID='" + $i + "']")
   } elseif ($eid -gt 0) {
@@ -378,9 +383,28 @@ function ToDoList-TaskUnFix([int]$i,[xml]$x=$null,[int]$eid=0)
   }
 }
 
-function ToDoList-TaskSet([int]$i,[String]$field="",[String]$value="",[xml]$x=$null,[int]$eid=0)
+function ToDoList-TaskSet([int]$i=0,[String]$field="",[String]$value="",[xml]$x=$null,[int]$eid=0)
 {
   try {
+    if (($i -eq 0) -And ($eid -eq 0)) {
+      Write-Host -ForegroundColor Gray "TaskID: " -NoNewline
+      $i = [int](Read-Host)
+    }
+
+    if (($i -eq 0) -And ($eid -eq 0)) {
+      return
+    }
+
+    if ($field -eq "") {
+      Write-Host -ForegroundColor Gray "Field (Title,PercentDone,Stars,Status,Tag,...): " -NoNewline
+      $field = Read-Host
+    }
+
+    if ($value -eq "") {
+      Write-Host -ForegroundColor Gray "New value: " -NoNewline
+      $value = Read-Host
+    }
+
     $field = $field.ToUpper()
     if ($field -eq "PERCENTDONE") {
       if ($value -eq "100") {
@@ -391,7 +415,7 @@ function ToDoList-TaskSet([int]$i,[String]$field="",[String]$value="",[xml]$x=$n
       return
     }
     elseif ($field -eq "STARS") {
-      ToDoList-SetStars -i $i=0 -new $value -x $x -DoSave $TRUE -eid $eid
+      ToDoList-SetStars -i $i -new $value -x $x -DoSave $TRUE -eid $eid
       return
     }
 
@@ -405,6 +429,8 @@ function ToDoList-TaskSet([int]$i,[String]$field="",[String]$value="",[xml]$x=$n
       $t.SetAttribute($field,$value)
     } elseif ($field -eq "TAG") {
       ToDoList-SetTaskChild -node $field -new $value -x $x -t $t -DoSave $FALSE
+    } elseif ($field -eq "COMMENTS") {
+      ToDoList-SetComment -new $value -x $x -t $t -DoSave $FALSE
     } else {
       Write-Host -ForegroundColor Red ("Field '"+$field+"' not found in the Task!")
       return
@@ -998,6 +1024,25 @@ function ToDoList-FindTask([String]$find)
   ToDoList-GetTasks -parm1 0 -find $find
 }
 
+function ToDoList-CatTask()
+{
+  if ($x -eq $null) {
+    $x = ToDoList-LoadXml
+  }
+
+  $rTask = ToDoList-SelectRoot $x
+  if ($rTask -eq $null) {
+    return
+  }
+
+  $local:tasks = $rTask.SelectNodes("TASK") `
+      | where { [int]$_.PERCENTDONE -le 99} `
+      | sort {[int]$_.Priority},{[int](ToDoList-GetStars -t $_)},{[double]$_.CreationDate}
+
+  $local:tasks | ft {ToDoList-FormatTaskInfo $_},"TITLE" -AutoSize -HideTableHeader
+  Write-Host "[2A[1;32;45mTotal count:[1;37;45m " $local:tasks.Length "`r`n"
+}
+
 function ToDoList-OpenTask([int]$id=0,[int]$eid=0)
 {
   $http = ""
@@ -1262,13 +1307,13 @@ function ToDoList-EditTask([int]$i=0,[xml]$x=$null,[int]$eid=0)
   $tag = Read-Host
   if ($tag -ne "") {
     if (($tag -eq "Defect") -Or ($tag -eq "d")) {
-      ToDoList-SetTaskChild -node "TAG" -new "Defect" -x $x -t $tNew -DoSave $FALSE
+      ToDoList-SetTaskChild -node "TAG" -new "Defect" -x $x -t $t -DoSave $FALSE
     } elseif (($tag -eq "Other") -Or ($tag -eq "o")) {
-      ToDoList-SetTaskChild -node "TAG" -new "Other" -x $x -t $tNew -DoSave $FALSE
+      ToDoList-SetTaskChild -node "TAG" -new "Other" -x $x -t $t -DoSave $FALSE
     } elseif (($tag -eq "Wiki") -Or ($tag -eq "w")) {
-      ToDoList-SetTaskChild -node "TAG" -new "Wiki" -x $x -t $tNew -DoSave $FALSE
+      ToDoList-SetTaskChild -node "TAG" -new "Wiki" -x $x -t $t -DoSave $FALSE
     } elseif (($tag -eq "Enhance") -Or ($tag -eq "e")) {
-      ToDoList-SetTaskChild -node "TAG" -new "Enhance" -x $x -t $tNew -DoSave $FALSE
+      ToDoList-SetTaskChild -node "TAG" -new "Enhance" -x $x -t $t -DoSave $FALSE
     }
     $is_modified = $TRUE
   }
@@ -1300,12 +1345,60 @@ function ToDoList-EditTask([int]$i=0,[xml]$x=$null,[int]$eid=0)
   }
 }
 
+function Hint()
+{
+  Write-Host -ForegroundColor Green -NoNewline "Commands: "
+  Write-Host -NoNewline "Hint"
+  Write-Host -ForegroundColor Gray -NoNewline "; "
+  Write-Host -NoNewline "List "
+  Write-Host -ForegroundColor Gray -NoNewline "[MinPriority [ID|CD|STars]]; "
+  Write-Host -NoNewline "ListAll"
+  Write-Host -ForegroundColor Gray -NoNewline "; "
+  Write-Host -NoNewline "TCat"
+  Write-Host -ForegroundColor Gray -NoNewline "; "
+  Write-Host -NoNewline "TFind "
+  Write-Host -ForegroundColor Gray "text"
+
+  ##
+  Write-Host -NoNewline "          "
+  Write-Host -ForegroundColor Gray -NoNewline "<"
+  Write-Host -NoNewline "Task"
+  Write-Host -ForegroundColor Gray -NoNewline "|"
+  Write-Host -NoNewline "Cmt"
+  Write-Host -ForegroundColor Gray -NoNewline "|"
+  Write-Host -NoNewline "Stars"
+  Write-Host -ForegroundColor Gray -NoNewline "|"
+  Write-Host -NoNewline "Fix"
+  Write-Host -ForegroundColor Gray -NoNewline "|"
+  Write-Host -NoNewline "UnFix"
+  Write-Host -ForegroundColor Gray "> TaskID | -eid IssueNo; " -NoNewline
+  Write-Host -NoNewline "TStat "
+  Write-Host -ForegroundColor Gray "TaskID [Status]"
+
+  ###
+  Write-Host -NoNewline "          "
+  Write-Host -NoNewline "TNew"
+  Write-Host -ForegroundColor Gray -NoNewline "; "
+  Write-Host -NoNewline "TEdit "
+  Write-Host -ForegroundColor Gray -NoNewline "TaskID | -eid IssueNo; "
+  Write-Host -NoNewline "TOpen "
+  Write-Host -ForegroundColor Gray -NoNewline "TaskID; "
+  Write-Host -NoNewline "IOpen|i "
+  Write-Host -ForegroundColor Gray -NoNewline "IssueNo; "
+  Write-Host -NoNewline "TSet "
+  Write-Host -ForegroundColor Gray "TaskID FieldName FieldVal"
+
+  ###
+  Write-Host "`r`n"
+}
+
 if ($aliases -eq "yes") {
   Set-Alias Stars    ToDoList-GetStars
   Set-Alias Task     ToDoList-GetTask
   Set-Alias TNew     ToDoList-NewTask
   Set-Alias TEdit    ToDoList-EditTask
   Set-Alias TFind    ToDoList-FindTask
+  Set-Alias TCat     ToDoList-CatTask
   Set-Alias TOpen    ToDoList-OpenTaskInt
   Set-Alias i        ToDoList-OpenTaskExt
   Set-Alias IOpen    ToDoList-OpenTaskExt
@@ -1325,47 +1418,6 @@ if ($aliases -eq "yes") {
 #UnFix 1425
 #Task 1425
 
-function Hint()
-{
-  Write-Host -ForegroundColor Green -NoNewline "Commands: "
-  Write-Host -NoNewline "Hint"
-  Write-Host -ForegroundColor Gray -NoNewline "; "
-  Write-Host -NoNewline "List "
-  Write-Host -ForegroundColor Gray -NoNewline "[MinPriority [ID|CD|STars]]; "
-  Write-Host -NoNewline "ListAll"
-  Write-Host -ForegroundColor Gray -NoNewline "; <"
-  Write-Host -NoNewline "Task"
-  Write-Host -ForegroundColor Gray -NoNewline "|"
-  Write-Host -NoNewline "Cmt"
-  Write-Host -ForegroundColor Gray -NoNewline "|"
-  Write-Host -NoNewline "Stars"
-  Write-Host -ForegroundColor Gray -NoNewline "|"
-  Write-Host -NoNewline "Fix"
-  Write-Host -ForegroundColor Gray -NoNewline "|"
-  Write-Host -NoNewline "UnFix"
-  Write-Host -ForegroundColor Gray "> TaskID | -eid IssueNo"
-
-  ###
-  Write-Host -NoNewline "          "
-  Write-Host -NoNewline "TNew"
-  Write-Host -ForegroundColor Gray -NoNewline "; "
-  Write-Host -NoNewline "TEdit "
-  Write-Host -ForegroundColor Gray -NoNewline "TaskID | -eid IssueNo; "
-  Write-Host -NoNewline "TFind "
-  Write-Host -ForegroundColor Gray -NoNewline "text; "
-  Write-Host -NoNewline "TOpen "
-  Write-Host -ForegroundColor Gray -NoNewline "TaskID; "
-  Write-Host -NoNewline "IOpen|i "
-  Write-Host -ForegroundColor Gray -NoNewline "IssueNo; "
-  Write-Host -NoNewline "TSet "
-  Write-Host -ForegroundColor Gray "TaskID FieldName FieldVal"
-
-  ###
-  Write-Host -NoNewline "          "
-  Write-Host -NoNewline "TStat "
-  Write-Host -ForegroundColor Gray -NoNewline "TaskID [Status]"
-  Write-Host "`r`n"
-}
 
 if (($workmode -eq "tasks") -Or ($workmode -eq "list")) {
   Hint
