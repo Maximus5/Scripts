@@ -338,7 +338,8 @@ function ToDoList-TaskFix([int]$i,[xml]$x=$null,[int]$eid=0)
     }
     $t = ToDoList-GetTask -i $i -x $x -eid $eid
     
-    $t.PERCENTDONE = "100"
+    $t.SetAttribute("PERCENTDONE","100")
+    #$t.PERCENTDONE = "100"
 
     $dt = Get-Date
     $dtOA = [String]$dt.ToOADate() # ex "41604.05045139"
@@ -363,7 +364,8 @@ function ToDoList-TaskUnFix([int]$i,[xml]$x=$null,[int]$eid=0)
     }
     $t = ToDoList-GetTask -i $i -x $x -eid $eid
 
-    $t.PERCENTDONE = "0"
+    $t.SetAttribute("PERCENTDONE","0")
+    #$t.PERCENTDONE = "0"
     $t.RemoveAttribute("DONEDATE")
     $t.RemoveAttribute("DONEDATESTRING")
 
@@ -888,6 +890,8 @@ function ToDoList-UpdateTasks([String]$options="")
 
   $script:Completed = $FALSE
 
+  $sAct = ""
+
   for ($iBlock=0; -Not $script:Completed ; $iBlock++) {
   #for ($iBlock=0; ($iBlock -lt $iBlocks) -Or ($NotCompleted) ; $iBlock++) {
     $sAct = ("Processing issues "+[String]($iBlock*100+1)+"..."+[String]($iBlock*100+$iPerBlock))
@@ -951,6 +955,8 @@ function ToDoList-UpdateTasks([String]$options="")
       $script:Completed = $TRUE
     }
   }
+
+  Write-Progress -Activity $sAct -Completed
 
   if ($script:modified) {
     ToDoList-SaveXml $x
@@ -1157,7 +1163,7 @@ function ToDoList-NewTask([xml]$x=$null)
   $tNew.SetAttribute("CREATEDBY",   $DefaultAuthor)
   #$tNew.SetAttribute("EXTERNALID",  $csv.ID)
   $tNew.SetAttribute("RISK","0")
-  #$tNew.SetAttribute("PERCENTDONE",$sPercent) # it will be set in SelectParent function
+  $tNew.SetAttribute("PERCENTDONE","0")
   $priority = ToDoList-ReadNumber "Priority (0..10)" 0 10
   if ($priority -eq "") {
     return
