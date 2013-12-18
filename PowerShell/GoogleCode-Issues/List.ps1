@@ -279,7 +279,7 @@ function ToDoList-TaskHasString([System.Xml.XmlElement]$t,[String]$find)
 
 #function ToDoList-GetTaskMatch([System.Xml.XmlElement]$t,[int]$priority=8,[String]$find="")
 
-function ToDoList-GetTasks($parm1=8,$parm2="",[xml]$x=$null,[String]$find="")
+function ToDoList-GetTasks($parm1=8,$parm2="",[xml]$x=$null,[String]$find="",[Boolean]$ShowFixed=$FALSE)
 {
   $priority = 8
   $sort = ""
@@ -290,6 +290,10 @@ function ToDoList-GetTasks($parm1=8,$parm2="",[xml]$x=$null,[String]$find="")
       $priority = [int]$parm1
     } else {
       $sort = $parm1
+      # when sorting by externalid (IssueNO) - show all with priority 5 or higher (by default)
+      if ($sort -eq "eid") {
+        $priority = 5
+      }
     }
   }
   if ($parm2 -ne "") {
@@ -304,28 +308,34 @@ function ToDoList-GetTasks($parm1=8,$parm2="",[xml]$x=$null,[String]$find="")
     $x = ToDoList-LoadXml
   }
 
+  if ($ShowFixed) { $max_percent = 1000 } else { $max_percent = 99 }
+
+
   Write-Host -ForegroundColor Green " filtering, sorting..."
-  #$x.SelectNodes("TODOLIST//TASK") | where { [int]$_.Priority -ge 8} | where { [int]$_.PERCENTDONE -le 99} | sort {[int]$_.Priority} | ft "ID","EXTERNALID","PRIORITY",{Stars -t $_},"ALLOCATEDBY","TITLE" -AutoSize -HideTableHeader
-  #$x.SelectNodes("TODOLIST//TASK") | where { [int]$_.Priority -ge 8} | where { [int]$_.PERCENTDONE -le 99} | sort {[int]$_.Priority},{[double]$_.CreationDate} | ft "ID","EXTERNALID","PRIORITY",{Stars -t $_},"ALLOCATEDBY","TITLE" -AutoSize -HideTableHeader
+
   if ($find -ne "") {
     $local:tasks = $x.SelectNodes("TODOLIST//TASK") `
-      | where { [int]$_.PERCENTDONE -le 99} | where {ToDoList-TaskHasString $_ $find} `
+      | where { [int]$_.PERCENTDONE -le $max_percent} | where {ToDoList-TaskHasString $_ $find} `
       | sort {[int]$_.ID}
   } elseif ($sort -eq "id") {
     $local:tasks = $x.SelectNodes("TODOLIST//TASK") `
-      | where { [int]$_.Priority -ge $priority} | where { [int]$_.PERCENTDONE -le 99} `
+      | where { [int]$_.Priority -ge $priority} | where { [int]$_.PERCENTDONE -le $max_percent} `
       | sort {[int]$_.ID}
+  } elseif ($sort -eq "eid") {
+    $local:tasks = $x.SelectNodes("TODOLIST//TASK") `
+      | where { [int]$_.EXTERNALID -ne ""} | where { [int]$_.Priority -ge $priority} | where { [int]$_.PERCENTDONE -le $max_percent} `
+      | sort {[int]$_.EXTERNALID},{[int]$_.ID}
   } elseif ($sort -eq "cd") {
     $local:tasks = $x.SelectNodes("TODOLIST//TASK") `
-      | where { [int]$_.Priority -ge $priority} | where { [int]$_.PERCENTDONE -le 99} `
+      | where { [int]$_.Priority -ge $priority} | where { [int]$_.PERCENTDONE -le $max_percent} `
       | sort {[double](iif -c ($_.LASTMOD -ne $null) -a $_.LASTMOD -b $_.CreationDate)},{[int]$_.ID}
   } elseif (($sort -eq "st") -or ($sort -eq "Stars")) {
     $local:tasks = $x.SelectNodes("TODOLIST//TASK") `
-      | where { [int]$_.Priority -ge $priority} | where { [int]$_.PERCENTDONE -le 99} `
+      | where { [int]$_.Priority -ge $priority} | where { [int]$_.PERCENTDONE -le $max_percent} `
       | sort {[int](ToDoList-GetStars -t $_)},{[int]$_.Priority},{[double](iif -c ($_.LASTMOD -ne $null) -a $_.LASTMOD -b $_.CreationDate)},{[int]$_.ID}
   } else {
     $local:tasks = $x.SelectNodes("TODOLIST//TASK") `
-      | where { [int]$_.Priority -ge $priority} | where { [int]$_.PERCENTDONE -le 99} `
+      | where { [int]$_.Priority -ge $priority} | where { [int]$_.PERCENTDONE -le $max_percent} `
       | sort {[int]$_.Priority},{[int](ToDoList-GetStars -t $_)},{[double]$_.CreationDate}
   }
 
@@ -1014,14 +1024,19 @@ function ToDoList-GetLastIssueNo()
   return $LastNo
 }
 
-function ToDoList-GetAllTasks()
+function ToDoList-GetTasksAll()
 {
-  ToDoList-GetTasks -parm1 0 -parm2 id
+  ToDoList-GetTasks -parm1 0 -parm2 id -ShowFixed $TRUE
 }
 
 function ToDoList-FindTask([String]$find)
 {
   ToDoList-GetTasks -parm1 0 -find $find
+}
+
+function ToDoList-FindTaskAll([String]$find)
+{
+  ToDoList-GetTasks -parm1 0 -find $find -ShowFixed $TRUE
 }
 
 function ToDoList-CatTask()
@@ -1355,9 +1370,11 @@ function Hint()
   Write-Host -NoNewline "ListAll"
   Write-Host -ForegroundColor Gray -NoNewline "; "
   Write-Host -NoNewline "TCat"
-  Write-Host -ForegroundColor Gray -NoNewline "; "
-  Write-Host -NoNewline "TFind "
-  Write-Host -ForegroundColor Gray "text"
+  Write-Host -ForegroundColor Gray -NoNewline "; <"
+  Write-Host -NoNewline "TFind"
+  Write-Host -ForegroundColor Gray -NoNewline "|"
+  Write-Host -NoNewline "TFindAll"
+  Write-Host -ForegroundColor Gray "> text"
 
   ##
   Write-Host -NoNewline "          "
@@ -1398,12 +1415,13 @@ if ($aliases -eq "yes") {
   Set-Alias TNew     ToDoList-NewTask
   Set-Alias TEdit    ToDoList-EditTask
   Set-Alias TFind    ToDoList-FindTask
+  Set-Alias TFindAll ToDoList-FindTaskAll
   Set-Alias TCat     ToDoList-CatTask
   Set-Alias TOpen    ToDoList-OpenTaskInt
   Set-Alias i        ToDoList-OpenTaskExt
   Set-Alias IOpen    ToDoList-OpenTaskExt
   Set-Alias List     ToDoList-GetTasks
-  Set-Alias ListAll  ToDoList-GetAllTasks
+  Set-Alias ListAll  ToDoList-GetTasksAll
   Set-Alias Fix      ToDoList-TaskFix
   Set-Alias UnFix    ToDoList-TaskUnFix
   Set-Alias TSet     ToDoList-TaskSet
