@@ -21,6 +21,11 @@ How to:
   Also, sometimes there was two files per release, script takes
   care about that (e.g. ConEmu.090324b.7z, ConEmu.090324b.src.7z).
 
+Interesting:
+  I also want to get "real" dates of commits (2009 year, yes?),
+  but I can't find a way to do that with GIT options...
+  No problem, there is ConEmuFakeDT env.var, look at go.cmd.
+
 Result:
   Wow, clean commit tree from old archives.
   Import history from googlecode SVN... next step.
