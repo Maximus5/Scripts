@@ -21,6 +21,8 @@ $Script_xml_Save_path = ($Script_Working_path+"\ConEmu-ToDo.xml")
 $Issues_Save_CSV = ($Script_Working_path+"\html_list\Issues-")
 $Issues_Save_HTML = ($Script_Working_path+"\html\")
 $SkipAutoUpdatePC = "MAX"
+#$Editor = "far -e1:1"
+$Editor = ""
 # Some hrefs
 $googlecode_issue_href = ("http://code.google.com/p/" + $GoogleCodeProjectName + "/issues/detail?id=")
 $http_prefix = ("http://code.google.com/p/" + $GoogleCodeProjectName + "/issues/detail?id=")
@@ -75,6 +77,13 @@ function ToDoList-SaveXml([xml]$x)
   $x.Save($Script_xml_Save_path)
 }
 
+function ToDoList-GetTaskId
+{
+  Write-Host -ForegroundColor Gray "TaskID (### or 'e###'): " -NoNewline
+  $id = (Read-Host)
+  return $id
+}
+
 # You may get task by "ID" ($i param)
 # or by "EXTERNALID" ($eid param) which is GC issue now
 function ToDoList-GetTask([int]$i=0,[xml]$x=$null,[int]$eid=0)
@@ -84,8 +93,12 @@ function ToDoList-GetTask([int]$i=0,[xml]$x=$null,[int]$eid=0)
   }
 
   if (($i -eq 0) -And ($eid -eq 0)) {
-    Write-Host -ForegroundColor Gray "TaskID: " -NoNewline
-    $i = [int](Read-Host)
+    $GetId = ToDoList-GetTaskId
+    if ((($GetId.SubString(0,1)) -eq "e")) {
+      $eid = [int]($GetId.SubString(1))
+    } else {
+      $i = [int]$GetId
+    }
   }
 
   if ($i -gt 0) {
@@ -177,7 +190,7 @@ function ToDoList-GetStars([int]$i=0,[xml]$x=$null,[System.Xml.XmlElement]$t=$nu
   }
 }
 
-function ToDoList-SetStars([int]$i=0,[String]$new,[xml]$x=$null,[System.Xml.XmlElement]$t=$null,[Boolean]$DoSave=$TRUE,[int]$eid=0)
+function ToDoList-SetStars([int]$i=0,[String]$new,[xml]$x=$null,[System.Xml.XmlElement]$t=$null,[Boolean]$DoSave=$TRUE,[int]$eid=0,[Boolean]$IncOnly=$FALSE)
 {
   $is_modified = $FALSE
   if ($t -eq $null) {
@@ -199,6 +212,11 @@ function ToDoList-SetStars([int]$i=0,[String]$new,[xml]$x=$null,[System.Xml.XmlE
       $is_modified = $TRUE
       $script:modified = $TRUE
     } elseif ($s.GetAttribute("VALUE") -ne $new) {
+      if ($IncOnly) {
+        if (([int]$s.GetAttribute("VALUE")) -ge ([int]$new)) {
+          return $FALSE # Do not set lesser
+        }
+      }
       $v = $s.SetAttribute("VALUE",$new)
       $is_modified = $TRUE
       $script:modified = $TRUE
@@ -393,12 +411,16 @@ function ToDoList-TaskUnFix([int]$i,[xml]$x=$null,[int]$eid=0)
   }
 }
 
-function ToDoList-TaskSet([int]$i=0,[String]$field="",[String]$value="",[xml]$x=$null,[int]$eid=0)
+function ToDoList-TaskSetInt([int]$i=0,[String]$field="",[String]$value="",[xml]$x=$null,[int]$eid=0,[Boolean]$DoSave=$TRUE,[System.Xml.XmlElement]$t=$null)
 {
   try {
     if (($i -eq 0) -And ($eid -eq 0)) {
-      Write-Host -ForegroundColor Gray "TaskID: " -NoNewline
-      $i = [int](Read-Host)
+      $GetId = ToDoList-GetTaskId
+      if ((($GetId.SubString(0,1)) -eq "e")) {
+        $eid = [int]($GetId.SubString(1))
+      } else {
+        $i = [int]$GetId
+      }
     }
 
     if (($i -eq 0) -And ($eid -eq 0)) {
@@ -425,7 +447,7 @@ function ToDoList-TaskSet([int]$i=0,[String]$field="",[String]$value="",[xml]$x=
       return
     }
     elseif ($field -eq "STARS") {
-      ToDoList-SetStars -i $i -new $value -x $x -DoSave $TRUE -eid $eid
+      ToDoList-SetStars -i $i -new $value -x $x -DoSave $DoSave -eid $eid
       return
     }
 
@@ -433,7 +455,9 @@ function ToDoList-TaskSet([int]$i=0,[String]$field="",[String]$value="",[xml]$x=
       $x = ToDoList-LoadXml
     }
 
+    if ($t -eq $null) {
     $t = ToDoList-GetTask -i $i -x $x -eid $eid
+    }
 
     if ($t.HasAttribute($field) -Or ($field -eq "STATUS")) {
       $t.SetAttribute($field,$value)
@@ -446,12 +470,54 @@ function ToDoList-TaskSet([int]$i=0,[String]$field="",[String]$value="",[xml]$x=
       return
     }
 
+    if ($DoSave) {
     ToDoList-SaveXml $x
+    }
     # ToDoList-GetTasks -x $x
   }
   catch {
     ToDoList-DumpException $error[0]
     Write-Host -ForegroundColor Red ("Fix "+$i+" failed!")
+  }
+}
+
+function ToDoList-TaskSet()
+{
+  if ($args.length -eq 0) {
+    return ToDoList-TaskSetInt
+  } elseif ($args.length -eq 1) {
+    return ToDoList-TaskSetInt [int]$args[0]
+  } elseif (($args.length -eq 2) -And ($args[0] -eq "-eid")) {
+    return ToDoList-TaskSetInt -eid [int]$args[1]
+  }
+
+  # Well, not we parse arguments one-by-one
+  $i = 0
+  $eid = 0
+  $idx = 0
+
+  if ($args[0] -eq "-eid") {
+    $idx++
+    $eid = [int]$args[$idx]
+  } else {
+    $i = [int]$args[$idx]
+  }
+  $idx++
+
+  if ($x -eq $null) {
+    $x = ToDoList-LoadXml
+  }
+  $t = ToDoList-GetTask -i $i -x $x -eid $eid
+
+  while (($idx + 1) -lt $args.length) {
+    ToDoList-TaskSetInt -i $i -field $args[$idx] -value $args[($idx+1)] -x $x -eid $eid -DoSave $FALSE -t $t
+    $idx += 2
+  }
+
+  ToDoList-SaveXml $x
+
+  if ($idx -lt $args.length) {
+    Write-Host -ForegroundColor Red ("Argument was ignored: "+$args[($args.length-1)])
   }
 }
 
@@ -465,7 +531,7 @@ function ToDoList-TaskStatus([int]$i,[String]$value="",[xml]$x=$null,[int]$eid=0
       Write-Host -ForegroundColor Red "No status yet"
     }
   } else {
-    ToDoList-TaskSet -i $i -field "STATUS" -value $value -x $x -eid $eid
+    ToDoList-TaskSetInt -i $i -field "STATUS" -value $value -x $x -eid $eid
   }
 }
 
@@ -834,7 +900,7 @@ function ToDoList-UpdateTasks([String]$options="")
 
         if (IsNumeric($csv.Stars)) {
           #Write-Host ("Updating stars for "+$csv.ID+" to "+$csv.Stars+" : "+$tt.Title)
-          $stars_modified = ToDoList-SetStars -new $csv.Stars -t $tt -x $x -DoSave $FALSE
+          $stars_modified = ToDoList-SetStars -new $csv.Stars -t $tt -x $x -DoSave $FALSE -IncOnly $TRUE
           #"Stars updated"
           if ($stars_modified) {
             ToDoList-PrintUpInfo $csv.ID ("Stars "+$csv.Stars) $csv.Summary
@@ -1273,6 +1339,23 @@ function ToDoList-NewTask([xml]$x=$null)
   ToDoList-SaveXml $x
 }
 
+function ToDoList-EditText([String]$Title,[String]$CurText)
+{
+  if ($Editor -ne "") {
+    $file = [System.IO.Path]::GetTempFileName()
+    Set-Content $file $CurText
+    & cmd /c ($Editor + " " + $file)
+    cls
+    $newText = Get-Content $file
+    if ($newText -eq $CurText) {
+      $newText = ""
+    }
+  } else {
+    $newText = ToDoList-ReadMultiLine $Title $CurText
+  }
+  return $newText
+}
+
 function ToDoList-EditTask([int]$i=0,[xml]$x=$null,[int]$eid=0)
 {
   if ($x -eq $null) {
@@ -1344,7 +1427,8 @@ function ToDoList-EditTask([int]$i=0,[xml]$x=$null,[int]$eid=0)
   $s = $t.SelectSingleNode("COMMENTS")
   if ($s -ne $null) { $cmt_cur = $s."#text" } else { $cmt_cur = "" }
   Write-Host -ForegroundColor Gray ("Current comment: "+$cmt_cur)
-  $cmt = ToDoList-ReadMultiLine "Comment" $cmt_cur
+  #$cmt = ToDoList-ReadMultiLine "Comment" $cmt_cur
+  $cmt = ToDoList-EditText "Comment" $cmt_cur
   if ($cmt -ne "") {
     ToDoList-SetComment -t $t -x $x -new $cmt -DoSave $FALSE
     $is_modified = $TRUE
@@ -1360,14 +1444,14 @@ function ToDoList-EditTask([int]$i=0,[xml]$x=$null,[int]$eid=0)
   }
 }
 
-function Hint()
+function THint()
 {
   Write-Host -ForegroundColor Green -NoNewline "Commands: "
-  Write-Host -NoNewline "Hint"
+  Write-Host -NoNewline "THint"
   Write-Host -ForegroundColor Gray -NoNewline "; "
-  Write-Host -NoNewline "List "
+  Write-Host -NoNewline "TList "
   Write-Host -ForegroundColor Gray -NoNewline "[MinPriority [ID|CD|STars]]; "
-  Write-Host -NoNewline "ListAll"
+  Write-Host -NoNewline "TListAll"
   Write-Host -ForegroundColor Gray -NoNewline "; "
   Write-Host -NoNewline "TCat"
   Write-Host -ForegroundColor Gray -NoNewline "; <"
@@ -1381,13 +1465,13 @@ function Hint()
   Write-Host -ForegroundColor Gray -NoNewline "<"
   Write-Host -NoNewline "Task"
   Write-Host -ForegroundColor Gray -NoNewline "|"
-  Write-Host -NoNewline "Cmt"
+  Write-Host -NoNewline "TC"
   Write-Host -ForegroundColor Gray -NoNewline "|"
-  Write-Host -NoNewline "Stars"
+  Write-Host -NoNewline "TStars"
   Write-Host -ForegroundColor Gray -NoNewline "|"
-  Write-Host -NoNewline "Fix"
+  Write-Host -NoNewline "TFix"
   Write-Host -ForegroundColor Gray -NoNewline "|"
-  Write-Host -NoNewline "UnFix"
+  Write-Host -NoNewline "TUnFix"
   Write-Host -ForegroundColor Gray "> TaskID | -eid IssueNo; " -NoNewline
   Write-Host -NoNewline "TStat "
   Write-Host -ForegroundColor Gray "TaskID [Status]"
@@ -1398,38 +1482,44 @@ function Hint()
   Write-Host -ForegroundColor Gray -NoNewline "; "
   Write-Host -NoNewline "TEdit "
   Write-Host -ForegroundColor Gray -NoNewline "TaskID | -eid IssueNo; "
+  Write-Host -NoNewline "TSet "
+  Write-Host -ForegroundColor Gray "TaskID FieldName FieldVal"
+
+  ###
+  Write-Host -NoNewline "          "
+  Write-Host -NoNewline "TUpdate"
+  Write-Host -ForegroundColor Gray -NoNewline " [last]; "
   Write-Host -NoNewline "TOpen "
   Write-Host -ForegroundColor Gray -NoNewline "TaskID; "
   Write-Host -NoNewline "IOpen|i "
-  Write-Host -ForegroundColor Gray -NoNewline "IssueNo; "
-  Write-Host -NoNewline "TSet "
-  Write-Host -ForegroundColor Gray "TaskID FieldName FieldVal"
+  Write-Host -ForegroundColor Gray "IssueNo"
 
   ###
   Write-Host "`r`n"
 }
 
 if ($aliases -eq "yes") {
-  Set-Alias Stars    ToDoList-GetStars
+  Set-Alias i        ToDoList-OpenTaskExt
+  Set-Alias xml      ToDoList-LoadXml
+
+  Set-Alias IOpen    ToDoList-OpenTaskExt
+  Set-Alias TOpen    ToDoList-OpenTaskInt
+
+  Set-Alias TStars   ToDoList-GetStars
   Set-Alias Task     ToDoList-GetTask
   Set-Alias TNew     ToDoList-NewTask
   Set-Alias TEdit    ToDoList-EditTask
   Set-Alias TFind    ToDoList-FindTask
   Set-Alias TFindAll ToDoList-FindTaskAll
   Set-Alias TCat     ToDoList-CatTask
-  Set-Alias TOpen    ToDoList-OpenTaskInt
-  Set-Alias i        ToDoList-OpenTaskExt
-  Set-Alias IOpen    ToDoList-OpenTaskExt
-  Set-Alias List     ToDoList-GetTasks
-  Set-Alias ListAll  ToDoList-GetTasksAll
-  Set-Alias Fix      ToDoList-TaskFix
-  Set-Alias UnFix    ToDoList-TaskUnFix
+  Set-Alias TList    ToDoList-GetTasks
+  Set-Alias TListAll ToDoList-GetTasksAll
+  Set-Alias TFix     ToDoList-TaskFix
+  Set-Alias TUnFix   ToDoList-TaskUnFix
   Set-Alias TSet     ToDoList-TaskSet
   Set-Alias TStat    ToDoList-TaskStatus
-  Set-Alias cmt      ToDoList-ShowComment
-  Set-Alias xml      ToDoList-LoadXml
-  Set-Alias Update   ToDoList-UpdateTasks
-  Set-Alias Update   ToDoList-UpdateTasks
+  Set-Alias TC       ToDoList-ShowComment
+  Set-Alias TUpdate  ToDoList-UpdateTasks
 }
 
 #Task 1425
@@ -1438,7 +1528,7 @@ if ($aliases -eq "yes") {
 
 
 if (($workmode -eq "tasks") -Or ($workmode -eq "list")) {
-  Hint
+  THint
 
   if (($workmode -eq "tasks") -And (($SkipAutoUpdatePC -eq "") -Or ($env:COMPUTERNAME -ne "MAX"))) {
     ToDoList-UpdateTasks "last"
