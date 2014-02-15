@@ -86,7 +86,7 @@ function ToDoList-GetTaskId
 
 # You may get task by "ID" ($i param)
 # or by "EXTERNALID" ($eid param) which is GC issue now
-function ToDoList-GetTask([int]$i=0,[xml]$x=$null,[int]$eid=0)
+function ToDoList-GetTask([String]$i="0",[xml]$x=$null,[int]$eid=0)
 {
   if ($x -eq $null) {
     $x = ToDoList-LoadXml
@@ -94,11 +94,15 @@ function ToDoList-GetTask([int]$i=0,[xml]$x=$null,[int]$eid=0)
 
   if (($i -eq 0) -And ($eid -eq 0)) {
     $GetId = ToDoList-GetTaskId
-    if ((($GetId.SubString(0,1)) -eq "e")) {
+    if ((($GetId.SubString(0,1)) -eq "e") -Or (($GetId.SubString(0,1)) -eq "i")) {
       $eid = [int]($GetId.SubString(1))
     } else {
       $i = [int]$GetId
     }
+  } elseif ((($i.SubString(0,1)) -eq "e") -Or (($i.SubString(0,1)) -eq "i")) {
+    #tc e1431
+    $eid = [int]($i.SubString(1))
+    $i = 0
   }
 
   if ($i -gt 0) {
@@ -112,7 +116,7 @@ function ToDoList-GetTask([int]$i=0,[xml]$x=$null,[int]$eid=0)
   return $x.SelectNodes($x_path)
 }
 
-function ToDoList-GetTaskChild([int]$i=0,[String]$node="TAG",[xml]$x=$null,[System.Xml.XmlElement]$t=$null,[int]$eid=0)
+function ToDoList-GetTaskChild([String]$i="0",[String]$node="TAG",[xml]$x=$null,[System.Xml.XmlElement]$t=$null,[int]$eid=0)
 {
   if ($t -eq $null) {
     if ($x -eq $null) {
@@ -135,7 +139,7 @@ function ToDoList-DumpException($error)
   Write-Host -ForegroundColor Red $error.Exception
 }
 
-function ToDoList-SetTaskChild([int]$i=0,[String]$node="TAG",[String]$new="",[xml]$x=$null,[System.Xml.XmlElement]$t=$null,[Boolean]$DoSave=$TRUE,[int]$eid=0)
+function ToDoList-SetTaskChild([String]$i="0",[String]$node="TAG",[String]$new="",[xml]$x=$null,[System.Xml.XmlElement]$t=$null,[Boolean]$DoSave=$TRUE,[int]$eid=0)
 {
   if ($t -eq $null) {
     if ($x -eq $null) {
@@ -166,7 +170,7 @@ function ToDoList-SetTaskChild([int]$i=0,[String]$node="TAG",[String]$new="",[xm
   return
 }
 
-function ToDoList-GetStars([int]$i=0,[xml]$x=$null,[System.Xml.XmlElement]$t=$null,[int]$eid=0)
+function ToDoList-GetStars([String]$i="0",[xml]$x=$null,[System.Xml.XmlElement]$t=$null,[int]$eid=0)
 {
   if ($t -eq $null) {
     if ($x -eq $null) {
@@ -190,7 +194,7 @@ function ToDoList-GetStars([int]$i=0,[xml]$x=$null,[System.Xml.XmlElement]$t=$nu
   }
 }
 
-function ToDoList-SetStars([int]$i=0,[String]$new,[xml]$x=$null,[System.Xml.XmlElement]$t=$null,[Boolean]$DoSave=$TRUE,[int]$eid=0,[Boolean]$IncOnly=$FALSE)
+function ToDoList-SetStars([String]$i="0",[String]$new,[xml]$x=$null,[System.Xml.XmlElement]$t=$null,[Boolean]$DoSave=$TRUE,[int]$eid=0,[Boolean]$IncOnly=$FALSE)
 {
   $is_modified = $FALSE
   if ($t -eq $null) {
@@ -230,13 +234,13 @@ function ToDoList-SetStars([int]$i=0,[String]$new,[xml]$x=$null,[System.Xml.XmlE
   return $is_modified
 }
 
-function ToDoList-SetTaskAttr([int]$id=0,[String]$attr="",[String]$new="",[xml]$x=$null,[System.Xml.XmlElement]$t=$null,[Boolean]$DoSave=$TRUE,[int]$eid=0)
+function ToDoList-SetTaskAttr([String]$i="0",[String]$attr="",[String]$new="",[xml]$x=$null,[System.Xml.XmlElement]$t=$null,[Boolean]$DoSave=$TRUE,[int]$eid=0)
 {
   if ($t -eq $null) {
     if ($x -eq $null) {
       $x = ToDoList-LoadXml
     }
-    $t = ToDoList-GetTask -i $id -x $x -eid $eid
+    $t = ToDoList-GetTask -i $i -x $x -eid $eid
   }
 
   if ($attr -eq "stars") {
@@ -363,7 +367,7 @@ function ToDoList-GetTasks($parm1=8,$parm2="",[xml]$x=$null,[String]$find="",[Bo
   return
 }
 
-function ToDoList-TaskFix([int]$i,[xml]$x=$null,[int]$eid=0)
+function ToDoList-TaskFix([String]$i="0",[xml]$x=$null,[int]$eid=0)
 {
   try {
     if ($x -eq $null) {
@@ -389,7 +393,7 @@ function ToDoList-TaskFix([int]$i,[xml]$x=$null,[int]$eid=0)
   }
 }
 
-function ToDoList-TaskUnFix([int]$i,[xml]$x=$null,[int]$eid=0)
+function ToDoList-TaskUnFix([String]$i="0",[xml]$x=$null,[int]$eid=0)
 {
   try {
     if ($x -eq $null) {
@@ -407,11 +411,11 @@ function ToDoList-TaskUnFix([int]$i,[xml]$x=$null,[int]$eid=0)
   }
   catch {
     ToDoList-DumpException $error[0]
-    Write-Host -ForegroundColor Red ("Fix "+$i+" failed!")
+    Write-Host -ForegroundColor Red ("UnFix "+$i+" failed!")
   }
 }
 
-function ToDoList-TaskSetInt([int]$i=0,[String]$field="",[String]$value="",[xml]$x=$null,[int]$eid=0,[Boolean]$DoSave=$TRUE,[System.Xml.XmlElement]$t=$null)
+function ToDoList-TaskSetInt([String]$i="0",[String]$field="",[String]$value="",[xml]$x=$null,[int]$eid=0,[Boolean]$DoSave=$TRUE,[System.Xml.XmlElement]$t=$null)
 {
   try {
     if (($i -eq 0) -And ($eid -eq 0)) {
@@ -477,7 +481,7 @@ function ToDoList-TaskSetInt([int]$i=0,[String]$field="",[String]$value="",[xml]
   }
   catch {
     ToDoList-DumpException $error[0]
-    Write-Host -ForegroundColor Red ("Fix "+$i+" failed!")
+    Write-Host -ForegroundColor Red ("TaskSetInt "+$i+" failed!")
   }
 }
 
@@ -486,9 +490,14 @@ function ToDoList-TaskSet()
   if ($args.length -eq 0) {
     return ToDoList-TaskSetInt
   } elseif ($args.length -eq 1) {
-    return ToDoList-TaskSetInt [int]$args[0]
+    $arg0 = [String]$args[0]
+    if ((($arg0.SubString(0,1)) -eq "e") -Or (($arg0.SubString(0,1)) -eq "i")) {
+      return ToDoList-TaskSetInt -eid ($arg0.SubString(1))
+    } else {
+      return ToDoList-TaskSetInt $arg0
+    }
   } elseif (($args.length -eq 2) -And ($args[0] -eq "-eid")) {
-    return ToDoList-TaskSetInt -eid [int]$args[1]
+    return ToDoList-TaskSetInt -eid [int]($args[1])
   }
 
   # Well, not we parse arguments one-by-one
@@ -499,6 +508,8 @@ function ToDoList-TaskSet()
   if ($args[0] -eq "-eid") {
     $idx++
     $eid = [int]$args[$idx]
+  } elseif ((([String]$args[0]).Substring(0,1) -eq "e") -Or (([String]$args[0]).Substring(0,1) -eq "i")) {
+    $eid = [int](([String]$args[0]).Substring(1))
   } else {
     $i = [int]$args[$idx]
   }
@@ -509,19 +520,20 @@ function ToDoList-TaskSet()
   }
   $t = ToDoList-GetTask -i $i -x $x -eid $eid
 
-  while (($idx + 1) -lt $args.length) {
-    ToDoList-TaskSetInt -i $i -field $args[$idx] -value $args[($idx+1)] -x $x -eid $eid -DoSave $FALSE -t $t
+  while ($idx -lt $args.length) {
+    if (($idx + 1) -lt $args.length) {
+      $newval = $args[($idx+1)]
+    } else {
+      $newval = ""
+    }
+    ToDoList-TaskSetInt -i $i -field $args[$idx] -value $newval -x $x -eid $eid -DoSave $FALSE -t $t
     $idx += 2
   }
 
   ToDoList-SaveXml $x
-
-  if ($idx -lt $args.length) {
-    Write-Host -ForegroundColor Red ("Argument was ignored: "+$args[($args.length-1)])
-  }
 }
 
-function ToDoList-TaskStatus([int]$i,[String]$value="",[xml]$x=$null,[int]$eid=0)
+function ToDoList-TaskStatus([String]$i="0",[String]$value="",[xml]$x=$null,[int]$eid=0)
 {
   if ($value -eq "") {
     $t = ToDoList-GetTask -i $i -x $x -eid $eid
@@ -665,7 +677,7 @@ function ToDoList-GetCommentExt([int]$eid=0)
   return ToDoList-FormatXmlText $cmt
 }
 
-function ToDoList-ShowComment([int]$i=0,[xml]$x=$null,[System.Xml.XmlElement]$t=$null,[int]$eid=0)
+function ToDoList-ShowComment([String]$i="0",[xml]$x=$null,[System.Xml.XmlElement]$t=$null,[int]$eid=0)
 {
   if ($t -eq $null) {
     if ($x -eq $null) {
@@ -682,15 +694,21 @@ function ToDoList-ShowComment([int]$i=0,[xml]$x=$null,[System.Xml.XmlElement]$t=
     $s = ToDoList-GetCommentExt -eid $eid
   }
 
-  if (($s -eq $null) -Or ($s -eq "")) {
+  if (($s -ne $null) -And ($s -ne "")) {
+    $cmt = $s."#text"
+  } else {
+    $cmt = ""
+  }
+
+  if (($cmt -eq $null) -Or ($cmt -eq "")) {
     Write-Host -ForegroundColor Red "There is no comments yet"
   } else {
-    Write-Host -ForegroundColor Cyan $s."#text".Replace('<a title="" href="/p/conemu-maximus5/wiki/ConEmu">ConEmu</a>','ConEmu')
+    Write-Host -ForegroundColor Cyan $cmt.Replace('<a title="" href="/p/conemu-maximus5/wiki/ConEmu">ConEmu</a>','ConEmu')
   }
 }
 
 
-function ToDoList-SetComment([int]$i=0,[String]$new,[xml]$x=$null,[System.Xml.XmlElement]$t=$null,[Boolean]$DoSave=$TRUE,[int]$eid=0)
+function ToDoList-SetComment([String]$i="0",[String]$new,[xml]$x=$null,[System.Xml.XmlElement]$t=$null,[Boolean]$DoSave=$TRUE,[int]$eid=0)
 {
   if ($t -eq $null) {
     if ($x -eq $null) {
@@ -704,15 +722,21 @@ function ToDoList-SetComment([int]$i=0,[String]$new,[xml]$x=$null,[System.Xml.Xm
   $s = $t.SelectSingleNode("COMMENTS")
   try {
     # <COMMENTS>Версия ОС: Win7 Rel x86</COMMENTS>
+    #if ($s -eq $null) {
+      $sNew = $x.CreateElement("COMMENTS")
+      $sNew.InnerText = $new
     if ($s -eq $null) {
-      $s = $x.CreateElement("COMMENTS")
-      $s.InnerText = $new
-      $v = $t.AppendChild($s)
+        $v = $t.AppendChild($sNew)
+      } else {
+        $s.InnerText
+        $v = $t.ReplaceChild($sNew,$s)
+        $v.InnerText
+      }
       $script:modified = $TRUE
-    } elseif ($s."#text" -ne $new) {
-      $s."#text" = $new
-      $script:modified = $TRUE
-    }
+    #} elseif ($s.InnerText -ne $new) {
+    #  $s.InnerText = $new
+    #  $script:modified = $TRUE
+    #}
     if ($DoSave) {
       ToDoList-SaveXml $x
     } else {
@@ -724,7 +748,7 @@ function ToDoList-SetComment([int]$i=0,[String]$new,[xml]$x=$null,[System.Xml.Xm
 }
 
 
-function ToDoList-UpdateComment([int]$i=0,[xml]$x=$null,[System.Xml.XmlElement]$t=$null,[Boolean]$DoSave=$TRUE,[int]$eid=0)
+function ToDoList-UpdateComment([String]$i="0",[xml]$x=$null,[System.Xml.XmlElement]$t=$null,[Boolean]$DoSave=$TRUE,[int]$eid=0)
 {
   if ($t -eq $null) {
     if ($x -eq $null) {
@@ -1058,7 +1082,7 @@ function ToDoList-UpdateTasks([String]$options="")
     }
   }
 
-  Write-Progress -Activity $sAct -Completed
+  Write-Progress -Activity $sAct -Status $sStat -Completed
 
   if ($script:modified) {
     ToDoList-SaveXml $x
@@ -1124,7 +1148,7 @@ function ToDoList-CatTask()
   Write-Host "[2A[1;32;45mTotal count:[1;37;45m " $local:tasks.Length "`r`n"
 }
 
-function ToDoList-OpenTask([int]$id=0,[int]$eid=0)
+function ToDoList-OpenTask([String]$id="0",[int]$eid=0)
 {
   $http = ""
   if ($eid -ne 0) {
@@ -1142,13 +1166,13 @@ function ToDoList-OpenTask([int]$id=0,[int]$eid=0)
     & start $http
   }
 }
-function ToDoList-OpenTaskInt([int]$id)
+function ToDoList-OpenTaskInt($id)
 {
-  ToDoList-OpenTask -id $id
+  ToDoList-OpenTask $id
 }
 function ToDoList-OpenTaskExt([int]$eid)
 {
-  ToDoList-OpenTask -eid $eid
+  ToDoList-OpenTask ("e"+$eid)
 }
 
 function ToDoList-SelectRoot([xml]$x=$null)
@@ -1202,7 +1226,8 @@ function ToDoList-SelectRoot([xml]$x=$null)
   }
   $i = ([int]$n) - 1
   if (($i -ge 0) -And ($i -lt $iCount)) {
-    return $local:tasks[$i]
+    # --- $local:tasks[(int)$i] не работает PS 2.0
+    return $local:tasks.Item([int]$i)
   }
 
   return $null
@@ -1324,11 +1349,9 @@ function ToDoList-NewTask([xml]$x=$null)
   }
 
   # Choose parent task
+  $tParent = $NULL
+  while ($tParent -eq $NULL) {
   $tParent = ToDoList-SelectRoot $x
-
-  if ($tParent -eq $null) {
-    Write-Host -ForegroundColor Red "Aborted!!!"
-    return
   }
 
   # And insert new task in ToDoList
@@ -1344,19 +1367,26 @@ function ToDoList-EditText([String]$Title,[String]$CurText)
   if ($Editor -ne "") {
     $file = [System.IO.Path]::GetTempFileName()
     Set-Content $file $CurText
+
+    # debug!
+    #Set-Content ($file+".copy") $CurText
+    # debug!
+
     & cmd /c ($Editor + " " + $file)
     cls
-    $newText = Get-Content $file
+    $newText = ((Get-Content $file) -join "`r`n")
+    #Set-Content ($file+".out") $newText
     if ($newText -eq $CurText) {
       $newText = ""
     }
+    del $file
   } else {
     $newText = ToDoList-ReadMultiLine $Title $CurText
   }
   return $newText
 }
 
-function ToDoList-EditTask([int]$i=0,[xml]$x=$null,[int]$eid=0)
+function ToDoList-EditTask([String]$i="0",[xml]$x=$null,[int]$eid=0)
 {
   if ($x -eq $null) {
     $x = ToDoList-LoadXml
@@ -1430,6 +1460,7 @@ function ToDoList-EditTask([int]$i=0,[xml]$x=$null,[int]$eid=0)
   #$cmt = ToDoList-ReadMultiLine "Comment" $cmt_cur
   $cmt = ToDoList-EditText "Comment" $cmt_cur
   if ($cmt -ne "") {
+    $cmt
     ToDoList-SetComment -t $t -x $x -new $cmt -DoSave $FALSE
     $is_modified = $TRUE
   }
